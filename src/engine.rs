@@ -1498,4 +1498,439 @@ mod tests {
         );
         assert!(report.rules_fired + report.rules_skipped == 4);
     }
+    // ── set_input: Result variants ────────────────────────────
+
+    #[test]
+    fn set_input_ok_quando_dentro_do_universo() {
+        let mut m = MamdaniEngine::new();
+        let v = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        m.add_antecedent(v);
+        assert!(m.set_input("x", 5.0).is_ok());
+    }
+
+    #[test]
+    fn set_input_err_out_of_range_acima() {
+        let mut m = MamdaniEngine::new();
+        let v = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        m.add_antecedent(v);
+        let err = m.set_input("x", 99.0).unwrap_err();
+        assert!(
+            matches!(err, crate::error::FuzzyError::InputOutOfRange { .. }),
+            "esperava InputOutOfRange, obteve {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn set_input_err_out_of_range_abaixo() {
+        let mut m = MamdaniEngine::new();
+        let v = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        m.add_antecedent(v);
+        let err = m.set_input("x", -1.0).unwrap_err();
+        assert!(
+            matches!(err, crate::error::FuzzyError::InputOutOfRange { .. }),
+            "esperava InputOutOfRange, obteve {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn set_input_out_of_range_ainda_insere_valor_clamped() {
+        // Mesmo retornando Err, o valor clamped deve ser inserido para compute() funcionar
+        let mut m = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+            MembershipFn::Trimf([0.0, 5.0, 10.0]),
+        );
+        let _ = m.set_input("x", 999.0); // fora do range, mas clampeia em 10.0
+        let result = m.compute();
+        assert!(result.is_ok(), "compute() deve funcionar com valor clamped");
+    }
+
+    #[test]
+    fn set_input_err_missing_variavel_nao_registrada() {
+        let mut m = MamdaniEngine::new();
+        let err = m.set_input("nao_existe", 5.0).unwrap_err();
+        assert!(
+            matches!(err, crate::error::FuzzyError::MissingInput(_)),
+            "esperava MissingInput, obteve {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn set_input_nos_limites_do_universo_e_ok() {
+        let mut m = MamdaniEngine::new();
+        let v = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        m.add_antecedent(v);
+        assert!(m.set_input("x", 0.0).is_ok(), "limite inferior deve ser Ok");
+        assert!(
+            m.set_input("x", 10.0).is_ok(),
+            "limite superior deve ser Ok"
+        );
+    }
+
+    // ── set_defuzz_method / defuzz_method getter ──────────────
+
+    #[test]
+    fn defuzz_method_padrao_e_centroid() {
+        let m = MamdaniEngine::new();
+        assert_eq!(m.defuzz_method(), &DefuzzMethod::Centroid);
+    }
+
+    #[test]
+    fn set_defuzz_method_altera_o_metodo() {
+        let mut m = MamdaniEngine::new();
+        m.set_defuzz_method(DefuzzMethod::Bisector);
+        assert_eq!(m.defuzz_method(), &DefuzzMethod::Bisector);
+        m.set_defuzz_method(DefuzzMethod::MeanOfMaximum);
+        assert_eq!(m.defuzz_method(), &DefuzzMethod::MeanOfMaximum);
+    }
+
+    // ── DefuzzMethod: Bisector ────────────────────────────────
+
+    fn motor_defuzz(method: DefuzzMethod) -> MamdaniEngine {
+        // Sistema simples: MF uniforme [0,0,10,10] sobre universo [0,10]
+        // Area total simetrica → todos os metodos devem convergir para ~5.0
+        let mut m = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]), // dispara com grau 1.0
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]), // MF uniforme na saida
+        );
+        m.set_defuzz_method(method);
+        m.set_input_unchecked("x", 5.0);
+        m
+    }
+
+    #[test]
+    fn bisector_mf_uniforme_retorna_ponto_medio() {
+        // MF uniforme: bissectriz divide area ao meio → ponto medio = 5.0
+        let m = motor_defuzz(DefuzzMethod::Bisector);
+        let r = m.compute().unwrap();
+        assert!(
+            (r["y"] - 5.0).abs() < 0.5,
+            "bisector com MF uniforme esperava ~5.0, obteve {:.4}",
+            r["y"]
+        );
+    }
+
+    #[test]
+    fn bisector_resultado_no_universo() {
+        let m = motor_defuzz(DefuzzMethod::Bisector);
+        let r = m.compute().unwrap();
+        assert!(
+            r["y"] >= 0.0 && r["y"] <= 10.0,
+            "bisector fora do universo: {:.4}",
+            r["y"]
+        );
+    }
+
+    #[test]
+    fn bisector_rampa_esquerda_menor_que_centroide() {
+        // trimf[0,0,10]: rampa decrescente, centroide analitico = 10/3 ≈ 3.33
+        // bisector divide area ao meio: para rampa triangular, bisector < centroide
+        let mut m = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+            MembershipFn::Trimf([0.0, 0.0, 10.0]),
+        );
+        m.set_defuzz_method(DefuzzMethod::Bisector);
+        m.set_input_unchecked("x", 5.0);
+        let r = m.compute().unwrap();
+        assert!(
+            r["y"] >= 0.0 && r["y"] <= 10.0,
+            "bisector fora do universo: {:.4}",
+            r["y"]
+        );
+    }
+
+    // ── DefuzzMethod: MeanOfMaximum ───────────────────────────
+
+    #[test]
+    fn mean_of_maximum_pico_unico_retorna_o_pico() {
+        // trimf[0,5,10]: pico unico em x=5 → MOM = 5.0
+        let mut m = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+            MembershipFn::Trimf([0.0, 5.0, 10.0]),
+        );
+        m.set_defuzz_method(DefuzzMethod::MeanOfMaximum);
+        m.set_input_unchecked("x", 5.0);
+        let r = m.compute().unwrap();
+        assert!(
+            (r["y"] - 5.0).abs() < 0.05,
+            "MOM com pico em 5 esperava ~5.0, obteve {:.4}",
+            r["y"]
+        );
+    }
+
+    #[test]
+    fn mean_of_maximum_plato_retorna_centro_do_plato() {
+        // trapmf[2,4,6,8]: plato de μ=1.0 entre x=4 e x=6 → MOM = media(4,6) = 5.0
+        let mut m = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+            MembershipFn::Trapmf([2.0, 4.0, 6.0, 8.0]),
+        );
+        m.set_defuzz_method(DefuzzMethod::MeanOfMaximum);
+        m.set_input_unchecked("x", 5.0);
+        let r = m.compute().unwrap();
+        assert!(
+            (r["y"] - 5.0).abs() < 0.5,
+            "MOM com plato [4,6] esperava ~5.0, obteve {:.4}",
+            r["y"]
+        );
+    }
+
+    #[test]
+    fn mean_of_maximum_resultado_no_universo() {
+        let m = motor_defuzz(DefuzzMethod::MeanOfMaximum);
+        let r = m.compute().unwrap();
+        assert!(
+            r["y"] >= 0.0 && r["y"] <= 10.0,
+            "MOM fora do universo: {:.4}",
+            r["y"]
+        );
+    }
+
+    // ── DefuzzMethod: SmallestOfMaximum ──────────────────────
+
+    #[test]
+    fn smallest_of_maximum_plato_retorna_limite_esquerdo() {
+        // trapmf[2,4,6,8]: plato entre x=4 e x=6 → SOM = 4.0 (primeiro maximo)
+        let mut m = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+            MembershipFn::Trapmf([2.0, 4.0, 6.0, 8.0]),
+        );
+        m.set_defuzz_method(DefuzzMethod::SmallestOfMaximum);
+        m.set_input_unchecked("x", 5.0);
+        let r = m.compute().unwrap();
+        // SOM deve ser menor ou igual ao MOM
+        let mut m2 = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+            MembershipFn::Trapmf([2.0, 4.0, 6.0, 8.0]),
+        );
+        m2.set_defuzz_method(DefuzzMethod::MeanOfMaximum);
+        m2.set_input_unchecked("x", 5.0);
+        let mom = m2.compute().unwrap()["y"];
+        assert!(
+            r["y"] <= mom + 0.01,
+            "SOM ({:.4}) deve ser <= MOM ({:.4})",
+            r["y"],
+            mom
+        );
+    }
+
+    #[test]
+    fn smallest_of_maximum_resultado_no_universo() {
+        let m = motor_defuzz(DefuzzMethod::SmallestOfMaximum);
+        let r = m.compute().unwrap();
+        assert!(
+            r["y"] >= 0.0 && r["y"] <= 10.0,
+            "SOM fora do universo: {:.4}",
+            r["y"]
+        );
+    }
+
+    // ── DefuzzMethod: LargestOfMaximum ───────────────────────
+
+    #[test]
+    fn largest_of_maximum_plato_retorna_limite_direito() {
+        // trapmf[2,4,6,8]: plato entre x=4 e x=6 → LOM deve ser >= MOM
+        let mut m = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+            MembershipFn::Trapmf([2.0, 4.0, 6.0, 8.0]),
+        );
+        m.set_defuzz_method(DefuzzMethod::LargestOfMaximum);
+        m.set_input_unchecked("x", 5.0);
+        let r = m.compute().unwrap();
+        let mut m2 = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+            MembershipFn::Trapmf([2.0, 4.0, 6.0, 8.0]),
+        );
+        m2.set_defuzz_method(DefuzzMethod::MeanOfMaximum);
+        m2.set_input_unchecked("x", 5.0);
+        let mom = m2.compute().unwrap()["y"];
+        assert!(
+            r["y"] >= mom - 0.01,
+            "LOM ({:.4}) deve ser >= MOM ({:.4})",
+            r["y"],
+            mom
+        );
+    }
+
+    #[test]
+    fn largest_of_maximum_resultado_no_universo() {
+        let m = motor_defuzz(DefuzzMethod::LargestOfMaximum);
+        let r = m.compute().unwrap();
+        assert!(
+            r["y"] >= 0.0 && r["y"] <= 10.0,
+            "LOM fora do universo: {:.4}",
+            r["y"]
+        );
+    }
+
+    #[test]
+    fn som_menor_ou_igual_mom_menor_ou_igual_lom() {
+        // Invariante fundamental: SOM <= MOM <= LOM para qualquer MF
+        let make = |method: DefuzzMethod| {
+            let mut m = motor_simples(
+                MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+                MembershipFn::Trapmf([2.0, 4.0, 6.0, 8.0]),
+            );
+            m.set_defuzz_method(method);
+            m.set_input_unchecked("x", 5.0);
+            m.compute().unwrap()["y"]
+        };
+        let som = make(DefuzzMethod::SmallestOfMaximum);
+        let mom = make(DefuzzMethod::MeanOfMaximum);
+        let lom = make(DefuzzMethod::LargestOfMaximum);
+        assert!(
+            som <= mom + 0.01 && mom <= lom + 0.01,
+            "invariante SOM<=MOM<=LOM violada: som={:.4} mom={:.4} lom={:.4}",
+            som,
+            mom,
+            lom
+        );
+    }
+
+    // ── discrete_cog ─────────────────────────────────────────
+
+    fn motor_para_cog() -> MamdaniEngine {
+        // Sistema simples com MF uniforme para COG analitico previsivel
+        let mut m = motor_simples(
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]), // dispara grau 1.0
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]), // MF uniforme na saida
+        );
+        m.set_input_unchecked("x", 5.0);
+        m
+    }
+
+    #[test]
+    fn discrete_cog_retorna_none_para_consequente_inexistente() {
+        let m = motor_para_cog();
+        assert!(m.discrete_cog("nao_existe", 1.0).is_none());
+    }
+
+    #[test]
+    fn discrete_cog_retorna_some_para_consequente_existente() {
+        let m = motor_para_cog();
+        assert!(m.discrete_cog("y", 1.0).is_some());
+    }
+
+    #[test]
+    fn discrete_cog_tamanho_disc_pts_correto() {
+        // universo [0,10], step=2.0 → pontos: 0,2,4,6,8,10 = 6 pontos
+        let m = motor_para_cog();
+        let table = m.discrete_cog("y", 2.0).unwrap();
+        assert_eq!(
+            table.disc_pts.len(),
+            6,
+            "esperava 6 pontos discretos, obteve {}",
+            table.disc_pts.len()
+        );
+    }
+
+    #[test]
+    fn discrete_cog_disc_pts_inclui_limites() {
+        let m = motor_para_cog();
+        let table = m.discrete_cog("y", 1.0).unwrap();
+        assert!(
+            (table.disc_pts.first().unwrap() - 0.0).abs() < 1e-9,
+            "primeiro ponto deve ser 0.0"
+        );
+        assert!(
+            (table.disc_pts.last().unwrap() - 10.0).abs() < 1e-9,
+            "ultimo ponto deve ser 10.0"
+        );
+    }
+
+    #[test]
+    fn discrete_cog_mu_values_dentro_de_zero_um() {
+        let m = motor_para_cog();
+        let table = m.discrete_cog("y", 1.0).unwrap();
+        for &mu in &table.mu_values {
+            assert!(
+                mu >= 0.0 && mu <= 1.0 + 1e-9,
+                "mu_value fora de [0,1]: {}",
+                mu
+            );
+        }
+    }
+
+    #[test]
+    fn discrete_cog_products_e_x_vezes_mu() {
+        let m = motor_para_cog();
+        let table = m.discrete_cog("y", 1.0).unwrap();
+        for ((x, mu), prod) in table
+            .disc_pts
+            .iter()
+            .zip(table.mu_values.iter())
+            .zip(table.products.iter())
+        {
+            assert!(
+                (prod - x * mu).abs() < 1e-9,
+                "product={:.6} != x({:.4}) * mu({:.4})",
+                prod,
+                x,
+                mu
+            );
+        }
+    }
+
+    #[test]
+    fn discrete_cog_numerador_e_soma_dos_products() {
+        let m = motor_para_cog();
+        let table = m.discrete_cog("y", 1.0).unwrap();
+        let soma: f64 = table.products.iter().sum();
+        assert!(
+            (table.numerator - soma).abs() < 1e-9,
+            "numerator != soma dos products"
+        );
+    }
+
+    #[test]
+    fn discrete_cog_denominador_e_soma_dos_mu() {
+        let m = motor_para_cog();
+        let table = m.discrete_cog("y", 1.0).unwrap();
+        let soma: f64 = table.mu_values.iter().sum();
+        assert!(
+            (table.denominator - soma).abs() < 1e-9,
+            "denominator != soma dos mu_values"
+        );
+    }
+
+    #[test]
+    fn discrete_cog_centroid_e_numerador_sobre_denominador() {
+        let m = motor_para_cog();
+        let table = m.discrete_cog("y", 1.0).unwrap();
+        let esperado = table.numerator / table.denominator;
+        assert!(
+            (table.centroid - esperado).abs() < 1e-9,
+            "centroid={:.6} != numerator/denominator={:.6}",
+            table.centroid,
+            esperado
+        );
+    }
+
+    #[test]
+    fn discrete_cog_mf_uniforme_centroid_aproxima_ponto_medio() {
+        // MF uniforme sobre [0,10]: centroide discreto deve ser ~5.0
+        let m = motor_para_cog();
+        let table = m.discrete_cog("y", 1.0).unwrap();
+        assert!(
+            (table.centroid - 5.0).abs() < 0.1,
+            "centroide de MF uniforme esperava ~5.0, obteve {:.4}",
+            table.centroid
+        );
+    }
+
+    #[test]
+    fn discrete_cog_centroid_consistente_com_compute_centroid() {
+        // O centroide discreto (step pequeno) deve ser proximo ao centroide continuo do compute()
+        let m = motor_para_cog();
+        let compute_val = m.compute().unwrap()["y"];
+        let table = m.discrete_cog("y", 0.1).unwrap();
+        assert!(
+            (table.centroid - compute_val).abs() < 0.5,
+            "discrete_cog ({:.4}) muito diferente de compute() ({:.4})",
+            table.centroid,
+            compute_val
+        );
+    }
 }
