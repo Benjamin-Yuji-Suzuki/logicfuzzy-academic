@@ -939,6 +939,26 @@ mod tests {
     }
 
     #[test]
+    fn explain_no_rules_fired_retorna_err_identico_ao_compute() {
+        // explain() deve ser simétrico com compute(): quando nenhuma regra dispara,
+        // ambos retornam Err(NoRulesFired) — não apenas compute().
+        let mut m = motor_simples(
+            MembershipFn::Trimf([0.0, 0.0, 5.0]), // suporte só em [0, 5]
+            MembershipFn::Trimf([0.0, 5.0, 10.0]),
+        );
+        m.set_input_unchecked("x", 8.0); // grau de "a" em 8.0 = 0.0 → nenhuma regra dispara
+
+        let compute_err = m.compute().unwrap_err();
+        let explain_err = m.explain().unwrap_err();
+
+        assert_eq!(
+            compute_err, explain_err,
+            "compute() e explain() devem retornar o mesmo erro quando nenhuma regra dispara"
+        );
+        assert_eq!(explain_err, crate::error::FuzzyError::NoRulesFired);
+    }
+
+    #[test]
     fn clip_desloca_centroide_para_baixo() {
         // Regra com MF simetrica clipada em 0.5:
         // a cauda superior e cortada → centroide desloca para a area de base
