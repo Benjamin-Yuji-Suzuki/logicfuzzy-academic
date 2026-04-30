@@ -70,9 +70,9 @@ impl FuzzifiedVariable {
 ///
 /// # Example
 /// ```
-/// use fuzzy_mamdani::{FuzzyVariable, Universe, Term, MembershipFn};
-/// use fuzzy_mamdani::rule::RuleBuilder;
-/// use fuzzy_mamdani::engine::MamdaniEngine;
+/// use logicfuzzy_academic::{FuzzyVariable, Universe, Term, MembershipFn};
+/// use logicfuzzy_academic::rule::RuleBuilder;
+/// use logicfuzzy_academic::engine::MamdaniEngine;
 ///
 /// let mut engine = MamdaniEngine::new();
 ///
@@ -86,11 +86,11 @@ impl FuzzifiedVariable {
 /// speed.add_term(Term::new("fast", MembershipFn::Trimf([50.0, 100.0, 100.0])));
 /// engine.add_consequent(speed);
 ///
-/// engine.add_rule(RuleBuilder::new().when("temperature","cold").then("speed","slow"));
-/// engine.add_rule(RuleBuilder::new().when("temperature","hot").then("speed","fast"));
+/// engine.add_rule(RuleBuilder::new().when("temperature","cold").then("speed","slow").build());
+/// engine.add_rule(RuleBuilder::new().when("temperature","hot").then("speed","fast").build());
 ///
-/// engine.set_input("temperature", 5.0);
-/// let report = engine.explain();
+/// engine.set_input("temperature", 5.0).unwrap();
+/// let report = engine.explain().unwrap();
 /// assert!(report.outputs["speed"] < 50.0);
 /// println!("{}", report.summary());
 /// ```
@@ -121,10 +121,7 @@ impl ExplainReport {
         // fuzzificacao
         out.push_str("[ Fuzzification ]\n");
         for fv in &self.fuzzification {
-            out.push_str(&format!(
-                "  {} = {:.4} (crisp)\n",
-                fv.variable, fv.crisp_input
-            ));
+            out.push_str(&format!("  {} = {:.4} (crisp)\n", fv.variable, fv.crisp_input));
             for (term, degree) in &fv.term_degrees {
                 let bar = Self::bar(*degree);
                 out.push_str(&format!("    {:>12}  {:.4}  {}\n", term, degree, bar));
@@ -161,10 +158,11 @@ impl ExplainReport {
     // barra visual de grau de pertinencia (0..10 chars)
     fn bar(degree: f64) -> String {
         let filled = (degree * 10.0).round() as usize;
-        let empty = 10 - filled.min(10);
+        let empty  = 10 - filled.min(10);
         format!("[{}{}]", "█".repeat(filled.min(10)), "░".repeat(empty))
     }
 }
+
 
 // ─────────────────────────────────────────────
 // CogTable: tabela de centroide discreto
@@ -186,41 +184,33 @@ impl ExplainReport {
 #[derive(Debug, Clone)]
 pub struct CogTable {
     /// Discrete sample points.
-    pub disc_pts: Vec<f64>,
+    pub disc_pts:    Vec<f64>,
     /// Aggregated μ at each sample point.
-    pub mu_values: Vec<f64>,
+    pub mu_values:   Vec<f64>,
     /// `I_i × μ(I_i)` for each point.
-    pub products: Vec<f64>,
+    pub products:    Vec<f64>,
     /// `Σ(I_i × μ(I_i))`.
-    pub numerator: f64,
+    pub numerator:   f64,
     /// `Σ(μ(I_i))`.
     pub denominator: f64,
     /// Defuzzified crisp value = `numerator / denominator`.
-    pub centroid: f64,
+    pub centroid:    f64,
 }
 
 impl CogTable {
     /// Prints the table to stdout in a readable ASCII format.
     pub fn print(&self, label: &str) {
         println!("\n  [ COG table — {} ]", label);
-        println!(
-            "  {:>8}  {:>14}  {:>22}",
-            "I_i", "mu_agg(I_i)", "I_i * mu_agg(I_i)"
-        );
+        println!("  {:>8}  {:>14}  {:>22}", "I_i", "mu_agg(I_i)", "I_i * mu_agg(I_i)");
         println!("  {}", "─".repeat(50));
-        for ((x, mu), prod) in self
-            .disc_pts
-            .iter()
+        for ((x, mu), prod) in self.disc_pts.iter()
             .zip(self.mu_values.iter())
             .zip(self.products.iter())
         {
             println!("  {:>8.1}  {:>14.6}  {:>22.6}", x, mu, prod);
         }
         println!("  {}", "─".repeat(50));
-        println!(
-            "  {:>8}  {:>14.6}  {:>22.6}  <- sums",
-            "", self.denominator, self.numerator
-        );
+        println!("  {:>8}  {:>14.6}  {:>22.6}  <- sums", "", self.denominator, self.numerator);
         println!("  Numerator   = {:.6}", self.numerator);
         println!("  Denominator = {:.6}", self.denominator);
         println!("  Centroid    = {:.6}", self.centroid);
@@ -257,11 +247,8 @@ mod tests {
         // este teste documenta o comportamento, nao exige ordem especifica
         let fv = make_fv(&[("a", 0.5), ("b", 0.5)]);
         let dom = fv.dominant_term();
-        assert!(
-            dom == Some("a") || dom == Some("b"),
-            "dominant_term deveria ser 'a' ou 'b', obteve {:?}",
-            dom
-        );
+        assert!(dom == Some("a") || dom == Some("b"),
+            "dominant_term deveria ser 'a' ou 'b', obteve {:?}", dom);
     }
 
     #[test]
@@ -288,10 +275,10 @@ mod tests {
     #[test]
     fn rule_firing_fired_true_quando_degree_positivo() {
         let rf = RuleFiring {
-            rule_text: "IF x IS a THEN y IS b".to_string(),
-            firing_degree: 0.75,
-            fired: true,
-            consequent_var: "y".to_string(),
+            rule_text:       "IF x IS a THEN y IS b".to_string(),
+            firing_degree:   0.75,
+            fired:           true,
+            consequent_var:  "y".to_string(),
             consequent_term: "b".to_string(),
         };
         assert!(rf.fired);
@@ -301,10 +288,10 @@ mod tests {
     #[test]
     fn rule_firing_fired_false_quando_degree_zero() {
         let rf = RuleFiring {
-            rule_text: "IF x IS a THEN y IS b".to_string(),
-            firing_degree: 0.0,
-            fired: false,
-            consequent_var: "y".to_string(),
+            rule_text:       "IF x IS a THEN y IS b".to_string(),
+            firing_degree:   0.0,
+            fired:           false,
+            consequent_var:  "y".to_string(),
             consequent_term: "b".to_string(),
         };
         assert!(!rf.fired);
@@ -317,11 +304,7 @@ mod tests {
     fn bar_grau_zero_retorna_vazio() {
         let b = ExplainReport::bar(0.0);
         assert!(b.contains("░"), "grau 0.0 deve ser barra vazia: {}", b);
-        assert!(
-            !b.contains("█"),
-            "grau 0.0 nao deve ter preenchimento: {}",
-            b
-        );
+        assert!(!b.contains("█"), "grau 0.0 nao deve ter preenchimento: {}", b);
     }
 
     #[test]
@@ -334,11 +317,7 @@ mod tests {
     #[test]
     fn bar_grau_meio_tem_ambos() {
         let b = ExplainReport::bar(0.5);
-        assert!(
-            b.contains("█"),
-            "grau 0.5 deve ter algum preenchimento: {}",
-            b
-        );
+        assert!(b.contains("█"), "grau 0.5 deve ter algum preenchimento: {}", b);
         assert!(b.contains("░"), "grau 0.5 deve ter algum vazio: {}", b);
     }
 
@@ -346,22 +325,25 @@ mod tests {
 
     fn make_report() -> ExplainReport {
         let fv = FuzzifiedVariable {
-            variable: "temperatura".to_string(),
-            crisp_input: 5.0,
-            term_degrees: vec![("fria".to_string(), 0.8), ("quente".to_string(), 0.0)],
+            variable:     "temperatura".to_string(),
+            crisp_input:  5.0,
+            term_degrees: vec![
+                ("fria".to_string(),   0.8),
+                ("quente".to_string(), 0.0),
+            ],
         };
         let rf_fired = RuleFiring {
-            rule_text: "IF temperatura IS fria THEN speed IS slow".to_string(),
-            firing_degree: 0.8,
-            fired: true,
-            consequent_var: "speed".to_string(),
+            rule_text:       "IF temperatura IS fria THEN speed IS slow".to_string(),
+            firing_degree:   0.8,
+            fired:           true,
+            consequent_var:  "speed".to_string(),
             consequent_term: "slow".to_string(),
         };
         let rf_skip = RuleFiring {
-            rule_text: "IF temperatura IS quente THEN speed IS fast".to_string(),
-            firing_degree: 0.0,
-            fired: false,
-            consequent_var: "speed".to_string(),
+            rule_text:       "IF temperatura IS quente THEN speed IS fast".to_string(),
+            firing_degree:   0.0,
+            fired:           false,
+            consequent_var:  "speed".to_string(),
             consequent_term: "fast".to_string(),
         };
         let mut outputs = HashMap::new();
@@ -369,9 +351,9 @@ mod tests {
 
         ExplainReport {
             fuzzification: vec![fv],
-            rule_firings: vec![rf_fired, rf_skip],
+            rule_firings:  vec![rf_fired, rf_skip],
             outputs,
-            rules_fired: 1,
+            rules_fired:   1,
             rules_skipped: 1,
         }
     }
@@ -379,15 +361,9 @@ mod tests {
     #[test]
     fn summary_contem_todas_secoes() {
         let s = make_report().summary();
-        assert!(s.contains("Fuzzification"), "faltou secao Fuzzification");
-        assert!(
-            s.contains("Rule Evaluation"),
-            "faltou secao Rule Evaluation"
-        );
-        assert!(
-            s.contains("Defuzzification"),
-            "faltou secao Defuzzification"
-        );
+        assert!(s.contains("Fuzzification"),  "faltou secao Fuzzification");
+        assert!(s.contains("Rule Evaluation"),"faltou secao Rule Evaluation");
+        assert!(s.contains("Defuzzification"),"faltou secao Defuzzification");
     }
 
     #[test]
@@ -399,11 +375,8 @@ mod tests {
     #[test]
     fn summary_contem_valor_crisp() {
         let s = make_report().summary();
-        assert!(
-            s.contains("5.0") || s.contains("5,0"),
-            "faltou valor crisp 5.0 no summary: {}",
-            s
-        );
+        assert!(s.contains("5.0") || s.contains("5,0"),
+            "faltou valor crisp 5.0 no summary: {}", s);
     }
 
     #[test]
@@ -418,11 +391,8 @@ mod tests {
     fn summary_contem_saida_defuzzificada() {
         let s = make_report().summary();
         assert!(s.contains("speed"), "faltou nome da saida: {}", s);
-        assert!(
-            s.contains("18.5") || s.contains("18,5"),
-            "faltou valor de saida 18.5: {}",
-            s
-        );
+        assert!(s.contains("18.5") || s.contains("18,5"),
+            "faltou valor de saida 18.5: {}", s);
     }
 
     #[test]

@@ -1,3 +1,5 @@
 /target
 /output
 *.svg
+Cargo.lock
+cargo.lock

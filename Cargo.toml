@@ -1,6 +1,6 @@
 [package]
 name        = "logicfuzzy_academic"
-version     = "0.1.2"
+version = "0.1.3"
 edition     = "2021"
 authors     = ["Benjamin Yuji Suzuki <github.com/Benjamin-Yuji-Suzuki>"]
 description = "Pure-Rust Mamdani Fuzzy Inference System — no external fuzzy crates"
@@ -14,9 +14,9 @@ categories  = ["science", "algorithms"]
 all-features = true
 
 [lib]
-name = "fuzzy_mamdani"
+name = "logicfuzzy_academic"
 path = "src/lib.rs"
 
-[[bin]]
+[[example]]
 name = "demo"
-path = "src/main.rs"
+path = "examples/demo.rs"

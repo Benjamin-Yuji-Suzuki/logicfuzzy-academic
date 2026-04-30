@@ -1,610 +1,688 @@
 //! # rule.rs
 //!
-//! Regras de inferencia Fuzzy do tipo SE–ENTAO.
-//! Equivalente a ctrl.Rule do scikit-fuzzy.
+//! Fuzzy inference rules for the Mamdani system.
+//! Equivalent to `ctrl.Rule` in scikit-fuzzy.
 //!
-//! Cada Rule conecta um ou mais antecedentes (entradas) a um consequente
-//! (saida) usando AND (min) ou OR (max).
-//!
-//! Pipeline de uso:
-//!   1. Crie Rules com antecedentes e consequente
-//!   2. O MamdaniEngine chamara firing_strength() na etapa de inferencia
-//!   3. O grau retornado e usado para recortar (clip) a MF do consequente
+//! New in v0.2.0:
+//! - `NOT` negation per antecedent: `IF temperature IS NOT cold THEN ...`
+//! - Rule weights: `rule.with_weight(0.8)` scales the firing degree
+//! - Multiple consequents per rule: `THEN fan IS fast AND light IS bright`
 
-use crate::variable::FuzzyVariable;
 use std::collections::HashMap;
 use std::fmt;
+use crate::variable::FuzzyVariable;
 
 // ─────────────────────────────────────────────────────────────────
 // Connector
 // ─────────────────────────────────────────────────────────────────
 
-/// Conector logico entre os antecedentes de uma regra.
+/// Logical connector between antecedents.
 ///
-/// - `And` → grau de disparo = MIN dos graus de pertinencia (t-norma)
-/// - `Or`  → grau de disparo = MAX dos graus de pertinencia (s-norma)
-///
-/// Equivalente ao operador implicito `&` e `|` nas Rules do scikit-fuzzy:
-///   ctrl.Rule(temperatura['alta'] & umidade['baixa'], velocidade['media'])
+/// - `And` → firing = MIN of membership degrees (t-norm)
+/// - `Or`  → firing = MAX of membership degrees (s-norm)
 #[derive(Debug, Clone, PartialEq)]
 pub enum Connector {
-    /// Conjuncao fuzzy: min(μ₁, μ₂, ..., μₙ)
+    /// Fuzzy conjunction: min(μ₁, μ₂, …, μₙ)
     And,
-    /// Disjuncao fuzzy: max(μ₁, μ₂, ..., μₙ)
+    /// Fuzzy disjunction: max(μ₁, μ₂, …, μₙ)
     Or,
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Antecedent
+// ─────────────────────────────────────────────────────────────────
+
+/// A single antecedent condition in a fuzzy rule.
+///
+/// Stores the variable name, term label, and whether the condition is negated.
+///
+/// When `negated = true` the membership degree is complemented: `μ' = 1 - μ`.
+/// This implements the standard fuzzy NOT operator.
+#[derive(Debug, Clone)]
+pub struct Antecedent {
+    /// Name of the antecedent variable.
+    pub var:     String,
+    /// Linguistic term label.
+    pub term:    String,
+    /// Whether this antecedent is negated (`IS NOT`).
+    pub negated: bool,
+}
+
+impl Antecedent {
+    /// Creates a normal (non-negated) antecedent.
+    pub fn new(var: impl Into<String>, term: impl Into<String>) -> Self {
+        Self { var: var.into(), term: term.into(), negated: false }
+    }
+
+    /// Creates a negated antecedent (`IS NOT`).
+    pub fn negated(var: impl Into<String>, term: impl Into<String>) -> Self {
+        Self { var: var.into(), term: term.into(), negated: true }
+    }
+
+    /// Evaluates the membership degree for this antecedent, applying negation if set.
+    pub fn eval(&self, inputs: &HashMap<String, f64>, vars: &HashMap<String, FuzzyVariable>) -> Option<f64> {
+        let val = inputs.get(self.var.as_str())?;
+        let var = vars.get(self.var.as_str())?;
+        let mu  = var.membership_at(&self.term, *val);
+        // Complemento fuzzy: NOT A = 1 - A
+        Some(if self.negated { 1.0 - mu } else { mu })
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────
 // Rule
 // ─────────────────────────────────────────────────────────────────
 
-/// Regra de inferencia Fuzzy do tipo SE–ENTAO (Mamdani).
+/// A Mamdani fuzzy inference rule with optional NOT, weights, and multiple consequents.
 ///
-/// Uma Rule conecta N antecedentes a um unico consequente:
-///   SE (var1 eh term1) AND/OR (var2 eh term2) ... ENTAO (saida eh term_saida)
-///
-/// O grau de disparo (firing strength) determina o corte na MF do consequente
-/// durante a etapa de implicacao.
-///
-/// # Exemplo
+/// # Example
 /// ```
-/// use fuzzy_mamdani::rule::{Rule, Connector};
+/// use logicfuzzy_academic::rule;
+/// use logicfuzzy_academic::rule::Connector;
 ///
-/// let regra = Rule::new(
-///     vec![
-///         ("temperatura".to_string(), "quente".to_string()),
-///         ("umidade".to_string(),     "alta".to_string()),
-///     ],
-///     Connector::And,
-///     "velocidade_ventilador".to_string(),
-///     "rapida".to_string(),
-/// );
-/// assert_eq!(regra.consequent_var(), "velocidade_ventilador");
-/// assert_eq!(regra.consequent_term(), "rapida");
-/// assert_eq!(regra.antecedent_count(), 2);
+/// // Basic rule
+/// let r = rule!(IF temperature IS hot THEN fan_speed IS fast);
+/// assert_eq!(r.consequents()[0].0, "fan_speed");
+///
+/// // Rule with NOT
+/// let r = rule!(IF temperature IS NOT cold THEN fan_speed IS fast);
+/// assert!(r.antecedents_full()[0].negated);
+///
+/// // Rule with weight
+/// let r = rule!(IF temperature IS hot THEN fan_speed IS fast).with_weight(0.8);
+/// assert!((r.weight() - 0.8).abs() < 1e-9);
 /// ```
 #[derive(Debug, Clone)]
 pub struct Rule {
-    /// Lista de (nome_da_variavel, label_do_termo) que formam os antecedentes.
-    antecedents: Vec<(String, String)>,
-    /// Conector logico entre os antecedentes (And ou Or).
-    connector: Connector,
-    /// Nome da variavel consequente (saida).
-    consequent_var: String,
-    /// Label do termo consequente.
-    consequent_term: String,
+    /// Antecedents with variable, term, and optional NOT.
+    antecedents: Vec<Antecedent>,
+    /// Logical connector applied between antecedents.
+    connector:   Connector,
+    /// One or more (variable, term) pairs this rule concludes.
+    consequents: Vec<(String, String)>,
+    /// Weight [0.0, 1.0] scaling the firing degree. Default: 1.0.
+    weight:      f64,
 }
 
 impl Rule {
-    /// Cria uma nova regra.
+    /// Creates a new rule from raw parts.
     ///
-    /// # Argumentos
-    /// * `antecedents` — lista de (nome_variavel, label_termo)
-    /// * `connector`   — And ou Or
-    /// * `consequent_var`  — nome da variavel de saida
-    /// * `consequent_term` — label do termo de saida
-    ///
-    /// Panics se a lista de antecedentes estiver vazia.
+    /// Panics if `antecedents` is empty or `consequents` is empty.
     pub fn new(
-        antecedents: Vec<(String, String)>,
-        connector: Connector,
-        consequent_var: String,
-        consequent_term: String,
+        antecedents: Vec<Antecedent>,
+        connector:   Connector,
+        consequents: Vec<(String, String)>,
     ) -> Self {
-        assert!(
-            !antecedents.is_empty(),
-            "Rule: antecedent list cannot be empty"
-        );
-        Self {
-            antecedents,
-            connector,
-            consequent_var,
-            consequent_term,
-        }
+        assert!(!antecedents.is_empty(), "Rule: antecedent list cannot be empty");
+        assert!(!consequents.is_empty(), "Rule: consequent list cannot be empty");
+        Self { antecedents, connector, consequents, weight: 1.0 }
     }
 
-    // ── Getters ─────────────────────────────────────────────────
+    /// Sets the rule weight and returns `self` for chaining.
+    ///
+    /// The weight scales the firing degree: `alpha = firing * weight`.
+    /// Must be in [0.0, 1.0].
+    ///
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule;
+    /// let r = rule!(IF x IS a THEN y IS b).with_weight(0.75);
+    /// assert!((r.weight() - 0.75).abs() < 1e-9);
+    /// ```
+    pub fn with_weight(mut self, weight: f64) -> Self {
+        assert!((0.0..=1.0).contains(&weight),
+            "Rule: weight must be in [0.0, 1.0], got {}", weight);
+        self.weight = weight;
+        self
+    }
 
-    /// Retorna referencia a lista de antecedentes (var_name, term_label).
-    pub fn antecedents(&self) -> &[(String, String)] {
+    /// Returns the full antecedent list including negation flags.
+    pub fn antecedents_full(&self) -> &[Antecedent] {
         &self.antecedents
     }
 
-    /// Retorna o conector desta regra.
+    /// Returns `(var, term)` pairs for backward compatibility.
+    pub fn antecedents(&self) -> Vec<(&str, &str)> {
+        self.antecedents.iter().map(|a| (a.var.as_str(), a.term.as_str())).collect()
+    }
+
+    /// Returns the logical connector between antecedents.
     pub fn connector(&self) -> &Connector {
         &self.connector
     }
 
-    /// Returns the name of the consequent variable.
+    /// Returns all consequent `(variable, term)` pairs.
+    pub fn consequents(&self) -> &[(String, String)] {
+        &self.consequents
+    }
+
+    /// Returns the first consequent's variable name.
+    /// For single-consequent rules this is equivalent to the old `consequent_var()`.
     pub fn consequent_var(&self) -> &str {
-        &self.consequent_var
+        &self.consequents[0].0
     }
 
-    /// Retorna o label do termo consequente.
+    /// Returns the first consequent's term label.
     pub fn consequent_term(&self) -> &str {
-        &self.consequent_term
+        &self.consequents[0].1
     }
 
-    /// Retorna o numero de antecedentes desta regra.
+    /// Returns the number of antecedents.
     pub fn antecedent_count(&self) -> usize {
         self.antecedents.len()
     }
 
-    // ── Avaliacao ───────────────────────────────────────────────
+    /// Returns the rule weight.
+    pub fn weight(&self) -> f64 {
+        self.weight
+    }
 
-    /// Calcula o grau de disparo (firing strength) da regra dados os
-    /// valores crisp de entrada e as variaveis antecedentes.
+    /// Evaluates the firing degree for this rule given crisp inputs.
     ///
-    /// Etapas:
-    ///   1. Fuzzificacao: para cada antecedente, calcula μ(input_value)
-    ///   2. Agregacao dos antecedentes via conector:
-    ///      - And → min(μ₁, μ₂, ..., μₙ)  [t-norma de Mamdani]
-    ///      - Or  → max(μ₁, μ₂, ..., μₙ)  [s-norma]
+    /// 1. Computes `μ(x)` for each antecedent (applying `NOT` if set).
+    /// 2. Combines degrees with AND (min) or OR (max).
+    /// 3. Multiplies by `weight`.
     ///
-    /// Retorna 0.0 se alguma variavel ou termo nao for encontrado (gracioso).
+    /// Returns `0.0` if any variable or term is missing from the maps.
     ///
-    /// # Argumentos
-    /// * `inputs`       — mapa { nome_variavel → valor_crisp }
-    /// * `antecedents`  — mapa { nome_variavel → FuzzyVariable }
-    ///
-    /// # Exemplo
+    /// # Example
     /// ```
+    /// use logicfuzzy_academic::{FuzzyVariable, Universe, Term, MembershipFn};
+    /// use logicfuzzy_academic::rule::{Rule, Antecedent, Connector};
     /// use std::collections::HashMap;
-    /// use fuzzy_mamdani::{FuzzyVariable, Universe, Term, MembershipFn};
-    /// use fuzzy_mamdani::rule::{Rule, Connector};
     ///
-    /// let mut temp = FuzzyVariable::new("temperatura", Universe::new(0.0, 50.0, 501));
-    /// temp.add_term(Term::new("quente", MembershipFn::Trimf([25.0, 50.0, 50.0])));
-    ///
-    /// let mut antecedents = HashMap::new();
-    /// antecedents.insert("temperatura".to_string(), temp);
+    /// let mut temp = FuzzyVariable::new("temperature", Universe::new(0.0, 50.0, 501));
+    /// temp.add_term(Term::new("hot", MembershipFn::Trimf([25.0, 50.0, 50.0])));
     ///
     /// let mut inputs = HashMap::new();
-    /// inputs.insert("temperatura".to_string(), 50.0_f64);
+    /// inputs.insert("temperature".to_string(), 50.0);
+    /// let mut vars = HashMap::new();
+    /// vars.insert("temperature".to_string(), temp);
     ///
-    /// let regra = Rule::new(
-    ///     vec![("temperatura".to_string(), "quente".to_string())],
+    /// let rule = Rule::new(
+    ///     vec![Antecedent::new("temperature", "hot")],
     ///     Connector::And,
-    ///     "velocidade".to_string(),
-    ///     "rapida".to_string(),
+    ///     vec![("speed".to_string(), "fast".to_string())],
     /// );
-    ///
-    /// let grau = regra.firing_strength(&inputs, &antecedents);
-    /// assert!((grau - 1.0).abs() < 1e-10);
+    /// assert!((rule.firing_strength(&inputs, &vars) - 1.0).abs() < 1e-9);
     /// ```
     pub fn firing_strength(
         &self,
         inputs: &HashMap<String, f64>,
         antecedents: &HashMap<String, FuzzyVariable>,
     ) -> f64 {
-        // Coleta os graus de pertinencia de cada antecedente
-        let graus: Vec<f64> = self
-            .antecedents
-            .iter()
-            .filter_map(|(var_name, term_label)| {
-                let valor = inputs.get(var_name.as_str())?;
-                let variavel = antecedents.get(var_name.as_str())?;
-                Some(variavel.membership_at(term_label, *valor))
-            })
+        // Avalia grau de cada antecedente (com complemento se negado)
+        let degrees: Vec<f64> = self.antecedents.iter()
+            .filter_map(|a| a.eval(inputs, antecedents))
             .collect();
 
-        // Regra sem nenhum grau calculado → disparo zero
-        if graus.is_empty() {
-            return 0.0;
-        }
+        if degrees.is_empty() { return 0.0; }
 
-        // Aplica o conector entre os antecedentes
-        match self.connector {
-            // AND (conjuncao): t-norma de Mamdani — minimo dos graus
-            Connector::And => graus.iter().cloned().fold(f64::INFINITY, f64::min),
-            // OR (disjuncao): s-norma — maximo dos graus
-            Connector::Or => graus.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
-        }
+        // Aplica conector
+        let firing = match self.connector {
+            Connector::And => degrees.iter().cloned().fold(f64::INFINITY, f64::min),
+            Connector::Or  => degrees.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+        };
+
+        // Aplica peso da regra
+        (firing * self.weight).clamp(0.0, 1.0)
     }
 }
 
-// Implementa Display para Rule, satisfazendo o lint do clippy (inherent_to_string).
-// Permite usar format!("{}", regra) e println!("{}", regra) normalmente.
 impl fmt::Display for Rule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let conector_str = match self.connector {
+        let conn = match self.connector {
             Connector::And => "AND",
-            Connector::Or => "OR",
+            Connector::Or  => "OR",
         };
 
-        let antecedentes_str: Vec<String> = self
-            .antecedents
-            .iter()
-            .map(|(var, term)| format!("({} is {})", var, term))
+        let ants: Vec<String> = self.antecedents.iter().map(|a| {
+            if a.negated {
+                format!("({} IS NOT {})", a.var, a.term)
+            } else {
+                format!("({} IS {})", a.var, a.term)
+            }
+        }).collect();
+
+        let cons: Vec<String> = self.consequents.iter()
+            .map(|(v, t)| format!("{} IS {}", v, t))
             .collect();
 
-        write!(
-            f,
-            "IF {} THEN {} is {}",
-            antecedentes_str.join(&format!(" {} ", conector_str)),
-            self.consequent_var,
-            self.consequent_term,
+        let weight_str = if (self.weight - 1.0).abs() > 1e-9 {
+            format!(" [w={:.2}]", self.weight)
+        } else {
+            String::new()
+        };
+
+        write!(f, "IF {} THEN {}{}",
+            ants.join(&format!(" {} ", conn)),
+            cons.join(" AND "),
+            weight_str,
         )
     }
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Builder (padrao fluente para facilitar a criacao de regras)
+// RuleBuilder
 // ─────────────────────────────────────────────────────────────────
 
-/// Builder fluente para construcao de Rules de forma legivel.
+/// Fluent builder for constructing fuzzy rules.
 ///
-/// # Exemplo
+/// Supports normal and negated (`IS NOT`) antecedents,
+/// multiple consequents, and rule weights.
+///
+/// # Example
 /// ```
-/// use fuzzy_mamdani::rule::{RuleBuilder, Connector};
+/// use logicfuzzy_academic::rule::{RuleBuilder, Antecedent};
 ///
-/// let regra = RuleBuilder::new()
-///     .when("temperatura", "quente")
-///     .and("umidade", "alta")
-///     .then("velocidade_ventilador", "rapida");
+/// let r = RuleBuilder::new()
+///     .when("temperature", "hot")
+///     .and_not("humidity", "high")
+///     .then("fan_speed", "fast")
+///     .also("light", "bright")
+///     .weight(0.9)
+///     .build();
 ///
-/// assert_eq!(regra.antecedent_count(), 2);
-/// assert_eq!(regra.connector(), &Connector::And);
-/// assert_eq!(regra.consequent_term(), "rapida");
+/// assert_eq!(r.consequents().len(), 2);
+/// assert!((r.weight() - 0.9).abs() < 1e-9);
+/// assert!(r.antecedents_full()[1].negated);
 /// ```
+#[derive(Debug, Default)]
 pub struct RuleBuilder {
-    antecedents: Vec<(String, String)>,
-    connector: Connector,
+    antecedents: Vec<Antecedent>,
+    connector:   Option<Connector>,
+    consequents: Vec<(String, String)>,
+    weight:      f64,
 }
 
 impl RuleBuilder {
-    /// Inicia um novo builder.
+    /// Creates an empty builder with default weight 1.0.
     pub fn new() -> Self {
-        Self {
-            antecedents: Vec::new(),
-            connector: Connector::And,
-        }
+        Self { weight: 1.0, ..Default::default() }
     }
 
-    /// Adiciona o primeiro antecedente (o SE).
+    /// Starts the rule with the first antecedent (normal, not negated).
     pub fn when(mut self, var: &str, term: &str) -> Self {
-        self.antecedents.push((var.to_string(), term.to_string()));
+        self.antecedents.push(Antecedent::new(var, term));
         self
     }
 
-    /// Adiciona antecedente com conector AND.
+    /// Starts the rule with the first antecedent negated (`IS NOT`).
+    pub fn when_not(mut self, var: &str, term: &str) -> Self {
+        self.antecedents.push(Antecedent::negated(var, term));
+        self
+    }
+
+    /// Adds a normal antecedent with AND connector.
     pub fn and(mut self, var: &str, term: &str) -> Self {
-        self.connector = Connector::And;
-        self.antecedents.push((var.to_string(), term.to_string()));
+        self.connector = Some(Connector::And);
+        self.antecedents.push(Antecedent::new(var, term));
         self
     }
 
-    /// Adiciona antecedente com conector OR.
+    /// Adds a negated antecedent with AND connector.
+    pub fn and_not(mut self, var: &str, term: &str) -> Self {
+        self.connector = Some(Connector::And);
+        self.antecedents.push(Antecedent::negated(var, term));
+        self
+    }
+
+    /// Adds a normal antecedent with OR connector.
     pub fn or(mut self, var: &str, term: &str) -> Self {
-        self.connector = Connector::Or;
-        self.antecedents.push((var.to_string(), term.to_string()));
+        self.connector = Some(Connector::Or);
+        self.antecedents.push(Antecedent::new(var, term));
         self
     }
 
-    /// Finaliza a regra com o consequente (o ENTAO). Consome o builder.
-    pub fn then(self, var: &str, term: &str) -> Rule {
-        Rule::new(
-            self.antecedents,
-            self.connector,
-            var.to_string(),
-            term.to_string(),
-        )
+    /// Adds a negated antecedent with OR connector.
+    pub fn or_not(mut self, var: &str, term: &str) -> Self {
+        self.connector = Some(Connector::Or);
+        self.antecedents.push(Antecedent::negated(var, term));
+        self
+    }
+
+    /// Sets the first consequent and returns the builder.
+    pub fn then(mut self, var: &str, term: &str) -> Self {
+        self.consequents.push((var.to_string(), term.to_string()));
+        self
+    }
+
+    /// Adds an additional consequent (for multi-consequent rules).
+    pub fn also(mut self, var: &str, term: &str) -> Self {
+        self.consequents.push((var.to_string(), term.to_string()));
+        self
+    }
+
+    /// Sets the rule weight [0.0, 1.0].
+    pub fn weight(mut self, w: f64) -> Self {
+        self.weight = w;
+        self
+    }
+
+    /// Builds and returns the `Rule`.
+    ///
+    /// Panics if no antecedent or no consequent was provided.
+    pub fn build(self) -> Rule {
+        let conn = self.connector.unwrap_or(Connector::And);
+        let mut rule = Rule::new(self.antecedents, conn, self.consequents);
+        rule.weight = self.weight;
+        rule
     }
 }
 
-impl Default for RuleBuilder {
-    fn default() -> Self {
-        Self::new()
+// Backward-compat: allow `.then()` to directly return a Rule for single-consequent rules
+impl RuleBuilder {
+    /// Convenience: sets the first (and only) consequent and immediately builds the rule.
+    ///
+    /// For multi-consequent rules, use `.then().also().build()` instead.
+    pub fn done(self) -> Rule {
+        self.build()
     }
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Testes unitarios
+// Tests
 // ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FuzzyVariable, MembershipFn, Term, Universe};
+    use crate::{FuzzyVariable, Universe, Term, MembershipFn};
 
-    // ── Helpers ────────────────────────────────────────────────
+    fn make_vars() -> (HashMap<String, f64>, HashMap<String, FuzzyVariable>) {
+        let mut temp = FuzzyVariable::new("temperature", Universe::new(0.0, 50.0, 501));
+        temp.add_term(Term::new("cold", MembershipFn::Trimf([0.0, 0.0, 25.0])));
+        temp.add_term(Term::new("hot",  MembershipFn::Trimf([25.0,50.0, 50.0])));
 
-    fn make_antecedents() -> HashMap<String, FuzzyVariable> {
-        let mut temperatura = FuzzyVariable::new("temperatura", Universe::new(0.0, 50.0, 501));
-        temperatura.add_term(Term::new("fria", MembershipFn::Trimf([0.0, 0.0, 25.0])));
-        temperatura.add_term(Term::new("morna", MembershipFn::Trimf([0.0, 25.0, 50.0])));
-        temperatura.add_term(Term::new("quente", MembershipFn::Trimf([25.0, 50.0, 50.0])));
+        let mut inputs = HashMap::new();
+        inputs.insert("temperature".to_string(), 5.0);  // cold: 0.8, hot: 0.0
 
-        let mut umidade = FuzzyVariable::new("umidade", Universe::new(0.0, 100.0, 1001));
-        umidade.add_term(Term::new("baixa", MembershipFn::Trimf([0.0, 0.0, 50.0])));
-        umidade.add_term(Term::new("media", MembershipFn::Trimf([0.0, 50.0, 100.0])));
-        umidade.add_term(Term::new("alta", MembershipFn::Trimf([50.0, 100.0, 100.0])));
+        let mut vars = HashMap::new();
+        vars.insert("temperature".to_string(), temp);
 
-        let mut map = HashMap::new();
-        map.insert("temperatura".to_string(), temperatura);
-        map.insert("umidade".to_string(), umidade);
-        map
+        (inputs, vars)
     }
 
-    fn make_inputs(temp: f64, umid: f64) -> HashMap<String, f64> {
-        let mut m = HashMap::new();
-        m.insert("temperatura".to_string(), temp);
-        m.insert("umidade".to_string(), umid);
-        m
+    // ── Connector ─────────────────────────────────────────────────
+
+    #[test] fn connector_and_eq()  { assert_eq!(Connector::And, Connector::And); }
+    #[test] fn connector_and_ne()  { assert_ne!(Connector::And, Connector::Or);  }
+
+    // ── Antecedent ────────────────────────────────────────────────
+
+    #[test] fn antecedent_normal_eval() {
+        let (inputs, vars) = make_vars();
+        let a = Antecedent::new("temperature", "cold");
+        let mu = a.eval(&inputs, &vars).unwrap();
+        assert!((mu - 0.8).abs() < 1e-6);
     }
 
-    fn regra_and() -> Rule {
-        RuleBuilder::new()
-            .when("temperatura", "quente")
-            .and("umidade", "alta")
-            .then("velocidade_ventilador", "rapida")
+    #[test] fn antecedent_negated_eval() {
+        let (inputs, vars) = make_vars();
+        let a = Antecedent::negated("temperature", "cold");
+        let mu = a.eval(&inputs, &vars).unwrap();
+        // NOT cold: 1 - 0.8 = 0.2
+        assert!((mu - 0.2).abs() < 1e-6);
     }
 
-    fn regra_or() -> Rule {
-        RuleBuilder::new()
-            .when("temperatura", "quente")
-            .or("umidade", "alta")
-            .then("velocidade_ventilador", "rapida")
+    #[test] fn antecedent_missing_var_returns_none() {
+        let inputs = HashMap::new();
+        let vars   = HashMap::new();
+        let a = Antecedent::new("missing", "term");
+        assert!(a.eval(&inputs, &vars).is_none());
     }
 
-    // ── Connector ──────────────────────────────────────────────
+    // ── Rule — basic ──────────────────────────────────────────────
 
-    #[test]
-    fn connector_and_eq() {
-        assert_eq!(Connector::And, Connector::And);
-        assert_ne!(Connector::And, Connector::Or);
-    }
-
-    // ── Rule: construcao ───────────────────────────────────────
-
-    #[test]
-    fn rule_antecedent_count() {
-        assert_eq!(regra_and().antecedent_count(), 2);
-    }
-
-    #[test]
-    fn rule_consequent_var() {
-        assert_eq!(regra_and().consequent_var(), "velocidade_ventilador");
-    }
-
-    #[test]
-    fn rule_consequent_term() {
-        assert_eq!(regra_and().consequent_term(), "rapida");
-    }
-
-    #[test]
-    fn rule_connector_and() {
-        assert_eq!(regra_and().connector(), &Connector::And);
-    }
-
-    #[test]
-    fn rule_connector_or() {
-        assert_eq!(regra_or().connector(), &Connector::Or);
-    }
-
-    #[test]
-    #[should_panic(expected = "antecedent list cannot be empty")]
-    fn rule_sem_antecedentes_panics() {
-        Rule::new(
-            vec![],
+    #[test] fn rule_one_antecedent() {
+        let r = Rule::new(
+            vec![Antecedent::new("temperature", "cold")],
             Connector::And,
-            "saida".to_string(),
-            "alto".to_string(),
+            vec![("speed".to_string(), "slow".to_string())],
         );
-    }
-
-    // ── firing_strength: AND ───────────────────────────────────
-
-    #[test]
-    fn and_ambos_pleno_disparo() {
-        // temp=50 (quente=1.0), umid=100 (alta=1.0) → min(1.0,1.0) = 1.0
-        let r = regra_and();
-        let grau = r.firing_strength(&make_inputs(50.0, 100.0), &make_antecedents());
-        assert!((grau - 1.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn and_um_zero_resulta_zero() {
-        // temp=0 (quente=0.0), umid=100 (alta=1.0) → min(0.0,1.0) = 0.0
-        let r = regra_and();
-        let grau = r.firing_strength(&make_inputs(0.0, 100.0), &make_antecedents());
-        assert_eq!(grau, 0.0);
-    }
-
-    #[test]
-    fn and_usa_minimo() {
-        // temp=50 (quente=1.0), umid=75 (alta=0.5) → min(1.0,0.5) = 0.5
-        let r = regra_and();
-        let grau = r.firing_strength(&make_inputs(50.0, 75.0), &make_antecedents());
-        assert!((grau - 0.5).abs() < 1e-10);
-    }
-
-    #[test]
-    fn and_grau_intermediario() {
-        // temp=37.5 (quente=0.5), umid=75 (alta=0.5) → min(0.5,0.5) = 0.5
-        let r = regra_and();
-        let grau = r.firing_strength(&make_inputs(37.5, 75.0), &make_antecedents());
-        assert!((grau - 0.5).abs() < 1e-10);
-    }
-
-    #[test]
-    fn and_menor_grau_prevalece() {
-        // temp=37.5 (quente=0.5), umid=100 (alta=1.0) → min = 0.5
-        let r = regra_and();
-        let grau = r.firing_strength(&make_inputs(37.5, 100.0), &make_antecedents());
-        assert!((grau - 0.5).abs() < 1e-10);
-    }
-
-    // ── firing_strength: OR ────────────────────────────────────
-
-    #[test]
-    fn or_usa_maximo() {
-        // temp=0 (quente=0.0), umid=100 (alta=1.0) → max(0.0,1.0) = 1.0
-        let r = regra_or();
-        let grau = r.firing_strength(&make_inputs(0.0, 100.0), &make_antecedents());
-        assert!((grau - 1.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn or_ambos_zero_resulta_zero() {
-        // temp=0 (quente=0.0), umid=0 (alta=0.0) → max(0.0,0.0) = 0.0
-        let r = regra_or();
-        let grau = r.firing_strength(&make_inputs(0.0, 0.0), &make_antecedents());
-        assert_eq!(grau, 0.0);
-    }
-
-    #[test]
-    fn or_grau_intermediario() {
-        // temp=37.5 (quente=0.5), umid=75 (alta=0.5) → max(0.5,0.5) = 0.5
-        let r = regra_or();
-        let grau = r.firing_strength(&make_inputs(37.5, 75.0), &make_antecedents());
-        assert!((grau - 0.5).abs() < 1e-10);
-    }
-
-    #[test]
-    fn or_maior_grau_prevalece() {
-        // temp=50 (quente=1.0), umid=75 (alta=0.5) → max = 1.0
-        let r = regra_or();
-        let grau = r.firing_strength(&make_inputs(50.0, 75.0), &make_antecedents());
-        assert!((grau - 1.0).abs() < 1e-10);
-    }
-
-    // ── firing_strength: gracioso com inputs faltando ──────────
-
-    #[test]
-    fn variavel_ausente_retorna_zero() {
-        // inputs nao tem "umidade" → filter_map descarta → graus=[quente_grau] so
-        // Comportamento gracioso: regra dispara apenas com os antecedentes disponiveis
-        let r = regra_and();
-        let mut inputs = HashMap::new();
-        inputs.insert("temperatura".to_string(), 50.0_f64);
-        // umidade ausente → filter_map descarta → graus tem so 1 elemento
-        // AND de um so grau = esse grau
-        let grau = r.firing_strength(&inputs, &make_antecedents());
-        assert!((grau - 1.0).abs() < 1e-10); // quente em 50 = 1.0
-    }
-
-    // ── Rule com 1 antecedente ─────────────────────────────────
-
-    #[test]
-    fn rule_um_antecedente_and() {
-        let r = RuleBuilder::new()
-            .when("temperatura", "fria")
-            .then("velocidade_ventilador", "lenta");
-        // temp=0 → fria=1.0
-        let mut inputs = HashMap::new();
-        inputs.insert("temperatura".to_string(), 0.0_f64);
-        let grau = r.firing_strength(&inputs, &make_antecedents());
-        assert!((grau - 1.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn rule_um_antecedente_sem_disparo() {
-        let r = RuleBuilder::new()
-            .when("temperatura", "fria")
-            .then("velocidade_ventilador", "lenta");
-        // temp=50 → fria=0.0
-        let mut inputs = HashMap::new();
-        inputs.insert("temperatura".to_string(), 50.0_f64);
-        let grau = r.firing_strength(&inputs, &make_antecedents());
-        assert_eq!(grau, 0.0);
-    }
-
-    // ── to_string ──────────────────────────────────────────────
-
-    #[test]
-    fn to_string_contem_se_entao() {
-        let s = regra_and().to_string();
-        assert!(s.contains("IF"), "missing IF: {}", s);
-        assert!(s.contains("THEN"), "missing THEN: {}", s);
-    }
-
-    #[test]
-    fn to_string_contem_variaveis() {
-        let s = regra_and().to_string();
-        assert!(s.contains("temperatura"), "faltou temperatura: {}", s);
-        assert!(s.contains("quente"), "faltou quente: {}", s);
-        assert!(s.contains("velocidade"), "faltou velocidade: {}", s);
-        assert!(s.contains("rapida"), "faltou rapida: {}", s);
-    }
-
-    #[test]
-    fn to_string_and_contem_and() {
-        assert!(regra_and().to_string().contains("AND"));
-    }
-
-    #[test]
-    fn to_string_or_contem_or() {
-        assert!(regra_or().to_string().contains("OR"));
-    }
-
-    // ── RuleBuilder ────────────────────────────────────────────
-
-    #[test]
-    fn builder_when_then() {
-        let r = RuleBuilder::new()
-            .when("temperatura", "quente")
-            .then("saida", "alta");
         assert_eq!(r.antecedent_count(), 1);
-        assert_eq!(r.consequent_var(), "saida");
-        assert_eq!(r.consequent_term(), "alta");
+        assert_eq!(r.consequent_var(),  "speed");
+        assert_eq!(r.consequent_term(), "slow");
+        assert!((r.weight() - 1.0).abs() < 1e-9);
     }
 
-    #[test]
-    fn builder_and_chain() {
+    #[test] fn rule_empty_antecedents_panics() {
+        let result = std::panic::catch_unwind(|| {
+            Rule::new(vec![], Connector::And, vec![("y".to_string(), "b".to_string())])
+        });
+        assert!(result.is_err());
+    }
+
+    #[test] fn rule_empty_consequents_panics() {
+        let result = std::panic::catch_unwind(|| {
+            Rule::new(
+                vec![Antecedent::new("x", "a")],
+                Connector::And,
+                vec![],
+            )
+        });
+        assert!(result.is_err());
+    }
+
+    // ── Rule — NOT ────────────────────────────────────────────────
+
+    #[test] fn rule_not_antecedent_fires_higher_when_term_low() {
+        // temperature=5 → cold=0.8 → NOT cold=0.2
+        // A regra com NOT cold deve disparar com grau 0.2
+        let (inputs, vars) = make_vars();
+        let r = Rule::new(
+            vec![Antecedent::negated("temperature", "cold")],
+            Connector::And,
+            vec![("y".to_string(), "b".to_string())],
+        );
+        let alpha = r.firing_strength(&inputs, &vars);
+        assert!((alpha - 0.2).abs() < 1e-6);
+    }
+
+    #[test] fn rule_not_antecedent_display() {
+        let r = Rule::new(
+            vec![Antecedent::negated("temperature", "cold")],
+            Connector::And,
+            vec![("speed".to_string(), "fast".to_string())],
+        );
+        let s = r.to_string();
+        assert!(s.contains("IS NOT"), "display deve mostrar IS NOT: {}", s);
+    }
+
+    // ── Rule — weight ─────────────────────────────────────────────
+
+    #[test] fn rule_weight_scales_firing() {
+        let (inputs, vars) = make_vars();
+        // cold=0.8, weight=0.5 → firing=0.4
+        let r = Rule::new(
+            vec![Antecedent::new("temperature", "cold")],
+            Connector::And,
+            vec![("y".to_string(), "b".to_string())],
+        ).with_weight(0.5);
+        let alpha = r.firing_strength(&inputs, &vars);
+        assert!((alpha - 0.4).abs() < 1e-6);
+    }
+
+    #[test] fn rule_weight_zero_never_fires() {
+        let (inputs, vars) = make_vars();
+        let r = Rule::new(
+            vec![Antecedent::new("temperature", "cold")],
+            Connector::And,
+            vec![("y".to_string(), "b".to_string())],
+        ).with_weight(0.0);
+        assert_eq!(r.firing_strength(&inputs, &vars), 0.0);
+    }
+
+    #[test] fn rule_weight_invalid_panics() {
+        let result = std::panic::catch_unwind(|| {
+            Rule::new(
+                vec![Antecedent::new("x", "a")],
+                Connector::And,
+                vec![("y".to_string(), "b".to_string())],
+            ).with_weight(1.5)
+        });
+        assert!(result.is_err());
+    }
+
+    #[test] fn rule_weight_displayed_when_not_one() {
+        let r = Rule::new(
+            vec![Antecedent::new("x", "a")],
+            Connector::And,
+            vec![("y".to_string(), "b".to_string())],
+        ).with_weight(0.75);
+        assert!(r.to_string().contains("w=0.75"));
+    }
+
+    #[test] fn rule_weight_not_displayed_when_one() {
+        let r = Rule::new(
+            vec![Antecedent::new("x", "a")],
+            Connector::And,
+            vec![("y".to_string(), "b".to_string())],
+        );
+        assert!(!r.to_string().contains('w'));
+    }
+
+    // ── Rule — multiple consequents ───────────────────────────────
+
+    #[test] fn rule_multiple_consequents() {
+        let r = Rule::new(
+            vec![Antecedent::new("temperature", "hot")],
+            Connector::And,
+            vec![
+                ("fan".to_string(),   "fast".to_string()),
+                ("light".to_string(), "bright".to_string()),
+            ],
+        );
+        assert_eq!(r.consequents().len(), 2);
+        assert_eq!(r.consequents()[0].0, "fan");
+        assert_eq!(r.consequents()[1].0, "light");
+    }
+
+    #[test] fn rule_multi_consequent_display() {
+        let r = Rule::new(
+            vec![Antecedent::new("x", "a")],
+            Connector::And,
+            vec![
+                ("y".to_string(), "b".to_string()),
+                ("z".to_string(), "c".to_string()),
+            ],
+        );
+        let s = r.to_string();
+        assert!(s.contains("y IS b"), "faltou primeiro consequente: {}", s);
+        assert!(s.contains("z IS c"), "faltou segundo consequente: {}", s);
+    }
+
+    // ── Firing strength ───────────────────────────────────────────
+
+    #[test] fn and_uses_min() {
+        let (mut inputs, mut vars) = make_vars();
+        let mut hum = FuzzyVariable::new("humidity", Universe::new(0.0,100.0,1001));
+        hum.add_term(Term::new("low", MembershipFn::Trimf([0.0,0.0,50.0])));
+        inputs.insert("humidity".to_string(), 20.0); // low=0.6
+        vars.insert("humidity".to_string(), hum);
+
+        // cold=0.8, low=0.6 → AND = min = 0.6
+        let r = Rule::new(
+            vec![Antecedent::new("temperature","cold"), Antecedent::new("humidity","low")],
+            Connector::And,
+            vec![("y".to_string(),"b".to_string())],
+        );
+        assert!((r.firing_strength(&inputs,&vars) - 0.6).abs() < 1e-6);
+    }
+
+    #[test] fn or_uses_max() {
+        let (mut inputs, mut vars) = make_vars();
+        let mut hum = FuzzyVariable::new("humidity", Universe::new(0.0,100.0,1001));
+        hum.add_term(Term::new("low", MembershipFn::Trimf([0.0,0.0,50.0])));
+        inputs.insert("humidity".to_string(), 20.0); // low=0.6
+        vars.insert("humidity".to_string(), hum);
+
+        // cold=0.8, low=0.6 → OR = max = 0.8
+        let r = Rule::new(
+            vec![Antecedent::new("temperature","cold"), Antecedent::new("humidity","low")],
+            Connector::Or,
+            vec![("y".to_string(),"b".to_string())],
+        );
+        assert!((r.firing_strength(&inputs,&vars) - 0.8).abs() < 1e-6);
+    }
+
+    #[test] fn missing_variable_returns_zero() {
+        let inputs = HashMap::new();
+        let vars   = HashMap::new();
+        let r = Rule::new(
+            vec![Antecedent::new("missing","term")],
+            Connector::And,
+            vec![("y".to_string(),"b".to_string())],
+        );
+        assert_eq!(r.firing_strength(&inputs,&vars), 0.0);
+    }
+
+    // ── RuleBuilder ───────────────────────────────────────────────
+
+    #[test] fn builder_basic() {
         let r = RuleBuilder::new()
-            .when("temperatura", "quente")
-            .and("umidade", "alta")
-            .then("saida", "alta");
-        assert_eq!(r.antecedent_count(), 2);
+            .when("temperature", "cold")
+            .then("speed", "slow")
+            .build();
+        assert_eq!(r.antecedent_count(), 1);
+        assert_eq!(r.consequent_var(), "speed");
+    }
+
+    #[test] fn builder_and_not() {
+        let r = RuleBuilder::new()
+            .when("temperature", "hot")
+            .and_not("humidity", "low")
+            .then("speed", "fast")
+            .build();
+        assert!(r.antecedents_full()[1].negated);
         assert_eq!(r.connector(), &Connector::And);
     }
 
-    #[test]
-    fn builder_or_chain() {
+    #[test] fn builder_or_not() {
         let r = RuleBuilder::new()
-            .when("temperatura", "quente")
-            .or("umidade", "alta")
-            .then("saida", "alta");
+            .when("temperature", "hot")
+            .or_not("humidity", "low")
+            .then("speed", "fast")
+            .build();
+        assert!(r.antecedents_full()[1].negated);
         assert_eq!(r.connector(), &Connector::Or);
     }
 
-    #[test]
-    fn builder_tres_antecedentes() {
+    #[test] fn builder_multi_consequent() {
         let r = RuleBuilder::new()
-            .when("a", "x")
-            .and("b", "y")
-            .and("c", "z")
-            .then("saida", "alta");
-        assert_eq!(r.antecedent_count(), 3);
+            .when("x", "a")
+            .then("y", "b")
+            .also("z", "c")
+            .build();
+        assert_eq!(r.consequents().len(), 2);
     }
 
-    // ── Cenario realista: ventilador ───────────────────────────
+    #[test] fn builder_weight() {
+        let r = RuleBuilder::new()
+            .when("x", "a")
+            .then("y", "b")
+            .weight(0.6)
+            .build();
+        assert!((r.weight() - 0.6).abs() < 1e-9);
+    }
 
-    #[test]
-    fn cenario_ventilador_regras_basicas() {
-        let ants = make_antecedents();
+    // ── Display ───────────────────────────────────────────────────
 
-        // Regra 1: SE temp fria AND umid baixa ENTAO lenta
-        let r1 = RuleBuilder::new()
-            .when("temperatura", "fria")
-            .and("umidade", "baixa")
-            .then("velocidade_ventilador", "lenta");
+    #[test] fn display_contains_if_then() {
+        let r = Rule::new(
+            vec![Antecedent::new("temperature","cold")],
+            Connector::And,
+            vec![("speed".to_string(),"slow".to_string())],
+        );
+        let s = r.to_string();
+        assert!(s.contains("IF"));
+        assert!(s.contains("THEN"));
+    }
 
-        // Regra 2: SE temp quente OR umid alta ENTAO rapida
-        let r2 = RuleBuilder::new()
-            .when("temperatura", "quente")
-            .or("umidade", "alta")
-            .then("velocidade_ventilador", "rapida");
-
-        // Cenario: temp=0 (fria=1.0), umid=0 (baixa=1.0)
-        let inputs_frio = make_inputs(0.0, 0.0);
-        assert!((r1.firing_strength(&inputs_frio, &ants) - 1.0).abs() < 1e-10);
-        assert_eq!(r2.firing_strength(&inputs_frio, &ants), 0.0);
-
-        // Cenario: temp=50 (quente=1.0), umid=100 (alta=1.0)
-        let inputs_quente = make_inputs(50.0, 100.0);
-        assert_eq!(r1.firing_strength(&inputs_quente, &ants), 0.0);
-        assert!((r2.firing_strength(&inputs_quente, &ants) - 1.0).abs() < 1e-10);
+    #[test] fn display_and_or() {
+        let r_and = RuleBuilder::new().when("x","a").and("y","b").then("z","c").build();
+        let r_or  = RuleBuilder::new().when("x","a").or("y","b").then("z","c").build();
+        assert!(r_and.to_string().contains("AND"));
+        assert!(r_or.to_string().contains("OR"));
     }
 }

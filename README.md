@@ -1,5 +1,9 @@
 # logicfuzzy-academic
 
+[![Crates.io](https://img.shields.io/crates/v/logicfuzzy_academic.svg)](https://crates.io/crates/logicfuzzy_academic)
+[![Docs.rs](https://docs.rs/logicfuzzy_academic/badge.svg)](https://docs.rs/logicfuzzy_academic)
+[![CI](https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic/actions/workflows/ci.yml/badge.svg)](https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic/actions/workflows/ci.yml)
+
 A pure-Rust Mamdani Fuzzy Inference System built from scratch — no external fuzzy crates.  
 Developed as an academic project for the course **Artificial Intelligence and Computation** at CESUPA.
 
@@ -23,20 +27,22 @@ export_svg!(engine, "output/", aggregated);
 
 ## Features
 
-- **Complete Mamdani pipeline** — fuzzification → inference → aggregation → centroid defuzzification
-- **Membership functions** — `trimf` (triangular), `trapmf` (trapezoidal), `gaussmf` (gaussian), including open shoulders
-- **`rule!` macro** — declarative DSL for writing fuzzy rules in natural language
-- **`fuzzy_var!` macro** — creates a `FuzzyVariable` with universe and all terms in one block
-- **`antecedent!` / `consequent!` macros** — creates and registers variables directly in the engine
-- **`var_svg!` macro** — generates an SVG string from a variable, with or without an input marker
-- **`export_svg!` macro** — exports all engine variables to SVG files in one call
-- **`RuleBuilder`** — fluent builder API as an alternative to the `rule!` macro
-- **AND / OR connectors** — min (t-norm) and max (s-norm)
-- **`explain()`** — full pipeline report: fuzzification degrees, rule firing strengths, crisp output
-- **`discrete_cog()`** — step-by-step Centre-of-Gravity table matching textbook notation
-- **SVG visualization** — colour legend, μ annotations, clipped activation areas, aggregated output plot
+- **Complete Mamdani pipeline** — fuzzification → inference → aggregation → defuzzification
+- **Membership functions** — `trimf`, `trapmf`, `gaussmf`, including open shoulders
+- **`rule!` macro** — declarative DSL: `IF x IS NOT cold AND y IS high THEN z IS fast`
+- **`fuzzy_var!` / `antecedent!` / `consequent!` macros** — build variables in one block
+- **`var_svg!` / `export_svg!` macros** — SVG export in one call
+- **`RuleBuilder`** — fluent API with `when_not()`, `and_not()`, `also()`, `weight()`
+- **AND / OR / NOT connectors** — min (t-norm), max (s-norm), complement
+- **Rule weights** — `rule.with_weight(0.8)` scales firing degree
+- **Multiple consequents** — `THEN fan IS fast AND light IS bright`
+- **`DefuzzMethod`** — `Centroid`, `Bisector`, `MeanOfMaximum`, `SmallestOfMaximum`, `LargestOfMaximum`
+- **`FuzzyError`** — `Result`-based errors: `MissingInput`, `InputOutOfRange`, `NoRulesFired`
+- **`explain()`** — full pipeline report with fuzzification degrees and rule firing strengths
+- **`discrete_cog()`** — step-by-step Centre-of-Gravity table
+- **SVG visualization** — colour legend, μ annotations, clipped activation areas, aggregated output
 - **Zero fuzzy dependencies** — only Rust `std`
-- **165 tests** — unit tests + doctests covering the full pipeline
+- **169 tests** — unit tests + doctests covering the full pipeline
 
 ---
 
@@ -44,11 +50,11 @@ export_svg!(engine, "output/", aggregated);
 
 ```toml
 [dependencies]
-fuzzy_mamdani = { path = "." }
+logicfuzzy_academic = "0.1"
 ```
 
 ```rust
-use fuzzy_mamdani::{MamdaniEngine, antecedent, consequent, rule, export_svg};
+use logicfuzzy_academic::{MamdaniEngine, antecedent, consequent, rule, export_svg};
 
 fn main() {
     let mut engine = MamdaniEngine::new();
@@ -74,13 +80,12 @@ fn main() {
     engine.add_rule(rule!(IF temperature IS hot  OR  humidity IS high   THEN fan_speed IS fast));
     engine.add_rule(rule!(IF temperature IS cold AND humidity IS high   THEN fan_speed IS medium));
 
-    engine.set_input("temperature", 45.0);
-    engine.set_input("humidity",    90.0);
+    engine.set_input("temperature", 45.0).unwrap();
+    engine.set_input("humidity",    90.0).unwrap();
 
-    let result = engine.compute();
+    let result = engine.compute().unwrap();
     println!("fan_speed = {:.2}%", result["fan_speed"]); // ~67%
 
-    // Export SVGs for all variables + aggregated output
     export_svg!(engine, "output/", aggregated);
 }
 ```
@@ -91,13 +96,9 @@ fn main() {
 
 ### `fuzzy_var!` — create a variable
 
-Creates a `FuzzyVariable` with its universe and all linguistic terms in one expression.
-Supports `trimf`, `trapmf`, and `gaussmf` — mixed in the same block.
-
 ```rust
 let temp = fuzzy_var!("temperature", 0.0, 50.0, 501,
     "cold"   => trimf   [0.0,  0.0, 25.0],
-    "warm"   => trimf   [0.0, 25.0, 50.0],
     "stable" => trapmf  [10.0,20.0, 30.0, 40.0],
     "peak"   => gaussmf { mean: 25.0, sigma: 5.0 },
 );
@@ -113,90 +114,82 @@ antecedent!(engine, "humidity", 0.0, 100.0, 1001,
 );
 ```
 
-### `rule!` — natural language rules
+### `rule!` — natural language rules with NOT
 
 ```rust
 rule!(IF temperature IS hot AND humidity IS high THEN fan_speed IS fast)
-rule!(IF temperature IS hot OR  humidity IS high THEN fan_speed IS fast)
-rule!(IF smoke_level IS high AND ambient_temp IS critical THEN alert_level IS maximum)
+rule!(IF temperature IS NOT cold OR humidity IS high THEN fan_speed IS fast)
+
+// Multiple consequents
+rule!(IF temperature IS hot THEN fan_speed IS fast AND light IS bright)
+
+// Rule weight
+rule!(IF smoke IS high THEN alert IS critical).with_weight(0.9)
 ```
 
-Or with the fluent `RuleBuilder`:
+Or with `RuleBuilder`:
 
 ```rust
 RuleBuilder::new()
-    .when("temperature", "hot")
-    .or("humidity", "high")
+    .when_not("temperature", "cold")
+    .and("humidity", "high")
     .then("fan_speed", "fast")
+    .also("light", "bright")
+    .weight(0.9)
+    .build()
 ```
 
-### `var_svg!` — generate SVG from a variable
+### `var_svg!` / `export_svg!`
 
 ```rust
-use fuzzy_mamdani::{fuzzy_var, var_svg};
+// Single variable SVG
+let svg = var_svg!(var);           // clean MF plot
+let svg = var_svg!(var, 35.0);    // with input marker at x=35
 
-let var = fuzzy_var!("temperature", 0.0, 50.0, 501,
-    "cold" => trimf [0.0,  0.0, 25.0],
-    "hot"  => trimf [25.0,50.0, 50.0],
-);
-
-// Clean MF plot — no input marker
-let svg = var_svg!(var);
-std::fs::write("temperature.svg", svg).unwrap();
-
-// With input marker at x = 35.0
-let svg = var_svg!(var, 35.0);
-std::fs::write("temperature_35.svg", svg).unwrap();
+// All engine variables at once
+export_svg!(engine, "output/");               // MF SVGs only
+export_svg!(engine, "output/", aggregated);   // + aggregated output SVGs
 ```
-
-### `export_svg!` — export all engine variables
-
-```rust
-use fuzzy_mamdani::export_svg;
-
-engine.set_input("temperature", 45.0);
-engine.compute();
-
-// Membership function SVGs only
-export_svg!(engine, "output/");
-
-// Membership + aggregated output SVGs
-export_svg!(engine, "output/", aggregated);
-```
-
-Each call prints `✓` on success or `✗ Error: …` on failure. Antecedents automatically include the input marker when `set_input` has been called.
 
 ---
 
-## SVG visualization
-
-Every SVG is self-contained and opens in any browser — no matplotlib, no Python, no tooling.
-
-Each plot includes:
-- Coloured curves per linguistic term
-- Clipped activation area when an input is set
-- Horizontal dashed lines + dot annotations showing `μ_term(x) = value`
-- Vertical dashed marker at the crisp input value
-- Colour legend strip at the bottom
-
-The aggregated output SVG additionally shows:
-- Original MF curves (dashed)
-- Each term clipped at its firing degree `α`
-- Grey aggregated envelope
-- Yellow centroid marker
+## Defuzzification methods
 
 ```rust
-// Individual variable — no input marker
-std::fs::write("temp.svg", var.to_svg()).unwrap();
+use logicfuzzy_academic::DefuzzMethod;
 
-// Individual variable — with input marker
-std::fs::write("temp.svg", var.to_svg_with_input(35.0)).unwrap();
+engine.set_defuzz_method(DefuzzMethod::Bisector);
+engine.set_defuzz_method(DefuzzMethod::MeanOfMaximum);
+engine.set_defuzz_method(DefuzzMethod::SmallestOfMaximum);
+engine.set_defuzz_method(DefuzzMethod::LargestOfMaximum);
+// Default: DefuzzMethod::Centroid
+```
 
-// All engine variables at once (antecedents include input markers)
-engine.export_svg("output/").unwrap();
+---
 
-// All engine variables + aggregated output SVGs
-engine.export_aggregated_svg("output/").unwrap();
+## Error handling
+
+```rust
+use logicfuzzy_academic::FuzzyError;
+
+// set_input validates the universe range
+match engine.set_input("temperature", 999.0) {
+    Ok(()) => {}
+    Err(FuzzyError::InputOutOfRange { variable, value, min, max }) => {
+        eprintln!("{variable} = {value} clamped to [{min}, {max}]");
+    }
+    Err(FuzzyError::MissingInput(name)) => {
+        eprintln!("variable '{name}' not registered");
+    }
+    Err(_) => {}
+}
+
+// compute() returns Err(NoRulesFired) when all firing degrees are zero
+match engine.compute() {
+    Ok(outputs) => println!("fan_speed = {:.2}", outputs["fan_speed"]),
+    Err(FuzzyError::NoRulesFired) => eprintln!("no rule fired — check inputs"),
+    Err(e) => eprintln!("error: {e}"),
+}
 ```
 
 ---
@@ -204,10 +197,10 @@ engine.export_aggregated_svg("output/").unwrap();
 ## `explain()` — inspecting the pipeline
 
 ```rust
-engine.set_input("temperature", 5.0);
-engine.set_input("humidity",    10.0);
+engine.set_input("temperature", 5.0).unwrap();
+engine.set_input("humidity",    10.0).unwrap();
 
-let report = engine.explain();
+let report = engine.explain().unwrap();
 println!("{}", report.summary());
 ```
 
@@ -222,58 +215,44 @@ println!("{}", report.summary());
     -> dominant term: low
 
 [ Rule Evaluation ] (2 fired, 2 skipped)
-  ✓ [0.8000]  IF (temperature is cold) AND (humidity is low) THEN fan_speed is slow
-  ✗ [0.0000]  IF (temperature is warm) AND (humidity is medium) THEN fan_speed is medium
+  ✓ [0.8000]  IF (temperature IS cold) AND (humidity IS low) THEN fan_speed IS slow
+  ✗ [0.0000]  IF (temperature IS warm) AND (humidity IS medium) THEN fan_speed IS medium
 
 [ Defuzzification Output ]
   fan_speed = 18.4956
-```
-
-You can also inspect the report programmatically:
-
-```rust
-for rf in &report.rule_firings {
-    if rf.fired {
-        println!("{} -> alpha {:.4}", rf.rule_text, rf.firing_degree);
-    }
-}
-for fv in &report.fuzzification {
-    println!("{}: dominant = {:?}", fv.variable, fv.dominant_term());
-}
-println!("fan_speed = {:.4}", report.outputs["fan_speed"]);
 ```
 
 ---
 
 ## `discrete_cog()` — step-by-step centroid table
 
-Computes the Centre-of-Gravity at evenly-spaced discrete points, matching the
-step-by-step calculation shown in fuzzy control textbooks.
-
 ```rust
-engine.set_input("moisture",     38.0);
-engine.set_input("temperature",  31.0);
-engine.compute();
+engine.set_input("moisture",     38.0).unwrap();
+engine.set_input("temperature",  31.0).unwrap();
+engine.compute().unwrap();
 
 let table = engine.discrete_cog("valve", 10.0).unwrap();
 table.print("valve");
+// Numerator   = 240.285714
+// Denominator = 3.828571
+// Centroid    = 62.761194
 ```
 
-```
-  [ COG table — valve ]
-     I_i      mu_agg(I_i)       I_i * mu_agg(I_i)
-  ──────────────────────────────────────────────────
-     0.0        0.142857                  0.000000
-    10.0        0.142857                  1.428571
-    ...
-    80.0        0.500000                 40.000000
-    90.0        0.500000                 45.000000
-   100.0        0.500000                 50.000000
-  ──────────────────────────────────────────────────
-              3.828571                240.285714  <- sums
-  Numerator   = 240.285714
-  Denominator = 3.828571
-  Centroid    = 62.761194
+---
+
+## SVG visualization
+
+Every SVG is self-contained and opens in any browser.  
+Features: colour legend, μ-value annotations, clipped activation areas, centroid marker.
+
+```rust
+// Per-variable
+std::fs::write("temp.svg", var.to_svg()).unwrap();
+std::fs::write("temp.svg", var.to_svg_with_input(35.0)).unwrap();
+
+// All engine variables
+engine.export_svg("output/").unwrap();
+engine.export_aggregated_svg("output/").unwrap();
 ```
 
 ---
@@ -282,82 +261,55 @@ table.print("valve");
 
 ```
 src/
-├── lib.rs          — re-exports all public items
-├── membership.rs   — trimf, trapmf, gaussmf, MembershipFn enum
-├── variable.rs     — Universe, Term, FuzzyVariable, to_svg / to_svg_with_input
-├── rule.rs         — Connector (And/Or), Rule, RuleBuilder
-├── engine.rs       — MamdaniEngine — full pipeline, explain(), export_svg(), discrete_cog()
-├── explain.rs      — ExplainReport, RuleFiring, FuzzifiedVariable, CogTable
-├── svg.rs          — pure-Rust SVG renderer (zero dependencies)
-└── macros.rs       — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!
+├── error.rs      — FuzzyError (MissingInput, InputOutOfRange, NoRulesFired)
+├── membership.rs — trimf, trapmf, gaussmf, MembershipFn
+├── variable.rs   — Universe, Term, FuzzyVariable, Universe::with_resolution()
+├── rule.rs       — Antecedent (with NOT), Rule, RuleBuilder, Connector
+├── engine.rs     — MamdaniEngine — full pipeline, DefuzzMethod, discrete_cog()
+├── explain.rs    — ExplainReport, RuleFiring, FuzzifiedVariable, CogTable
+├── svg.rs        — pure-Rust SVG renderer (zero dependencies)
+├── macros.rs     — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!
+└── lib.rs        — public re-exports
+
+examples/
+└── demo.rs       — two complete systems (tip control + irrigation) with SVG export
 ```
 
 ### Pipeline
 
 ```
-crisp inputs
-    │
-    ▼  fuzzification   — μ(x) for each antecedent term
-firing strengths
-    │
-    ▼  inference       — AND = min, OR = max
-    │
-    ▼  clip            — min(mf, firing_strength)   [Mamdani implication]
-    │
-    ▼  aggregation     — max across all rules
-aggregated MF
-    │
-    ▼  defuzzification — centroid = Σ(x·μ) / Σ(μ)
-crisp output
+crisp inputs  →  fuzzification  →  inference (AND=min, OR=max, NOT=1-μ)
+             →  clip (Mamdani implication)  →  aggregation (max)
+             →  defuzzification (Centroid / Bisector / MOM / SOM / LOM)
+             →  crisp output
 ```
 
 ---
 
-## Running the demo
+## Running
 
 ```bash
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
-cargo run       # two complete systems + SVG export to output/
-cargo test      # 165 tests (unit + doctests)
+cargo run --example demo   # two systems + SVG export to output/
+cargo test                 # 169 tests (unit + doctests)
 ```
-
-`cargo run` executes two Mamdani systems — Tip Control and Irrigation Control —
-printing fuzzification tables, rule firing degrees, discrete COG tables, scenario
-results, and writing SVGs to `output/gorjeta/` and `output/irrigacao/`.
 
 ---
 
 ## Changelog
 
-### v0.1.2
-- Added `svg.rs` — pure-Rust SVG renderer with colour legend, μ annotations, clipped activation areas
-- Added `FuzzyVariable::to_svg()` and `to_svg_with_input(value)`
-- Added `MamdaniEngine::export_svg(dir)` and `export_aggregated_svg(dir)`
-- Added `var_svg!` and `export_svg!` macros
-- Added `MamdaniEngine::discrete_cog(name, step)` — step-by-step COG table
-- Added `CogTable` with `print()` method
-- All output text translated to English; clippy clean
-
-### v0.1.1
-- Added `fuzzy_var!`, `antecedent!`, `consequent!` macros
-- Added `explain()` and `ExplainReport`
-- Implemented `fmt::Display` for `Rule`
-- All public doc comments translated to English
-
-### v0.1.0
-- Initial release — complete Mamdani pipeline, `rule!` macro, `trimf` / `trapmf` / `gaussmf`
+See [CHANGELOG.md](./CHANGELOG.md) for the full history.
 
 ---
 
 ## Acknowledgements
 
-This library was designed to be a functional equivalent of **[scikit-fuzzy](https://github.com/scikit-fuzzy/scikit-fuzzy)** for Python, which served as the primary reference for the pipeline architecture, membership function definitions, and defuzzification method.
+Designed as a functional equivalent of **[scikit-fuzzy](https://github.com/scikit-fuzzy/scikit-fuzzy)** for Python.
 
-The theoretical foundation follows the original work by:
-
-- **Lotfi A. Zadeh** — *Fuzzy Sets* (1965), Information and Control
-- **E. H. Mamdani & S. Assilian** — *An experiment in linguistic synthesis with a fuzzy logic controller* (1975), International Journal of Man-Machine Studies
+Theoretical foundation:
+- **Lotfi A. Zadeh** — *Fuzzy Sets* (1965)
+- **E. H. Mamdani & S. Assilian** — *An experiment in linguistic synthesis with a fuzzy logic controller* (1975)
 
 ---
 
