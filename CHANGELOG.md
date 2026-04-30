@@ -12,6 +12,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.4] — 2026-04-30
+
+### Fixed
+- `MamdaniEngine::export_aggregated_svg` now respects the configured
+  `DefuzzMethod` (previously always used hardcoded centroid regardless of
+  `set_defuzz_method`)
+- `MamdaniEngine::explain` now returns `Err(NoRulesFired)` when no rule
+  fires, making it symmetric with `compute()` (previously the error was
+  silently swallowed and `Ok` was returned)
+- `engine::tests::explain_graus_dentro_do_intervalo` updated to handle
+  `Err(NoRulesFired)` at the boundary input `x=25.0` where all membership
+  degrees are zero
+
+### Added
+- 30 new unit tests in `engine.rs` covering previously untested code paths:
+  - `set_input`: `Ok` in-range, `Err(InputOutOfRange)` above/below bounds,
+    clamped value still inserted, `Err(MissingInput)` for unknown variable,
+    `Ok` at exact universe limits
+  - `set_defuzz_method` / `defuzz_method()` getter
+  - `DefuzzMethod::Bisector` — uniform MF returns midpoint, result in universe
+  - `DefuzzMethod::MeanOfMaximum` — single peak, plateau centre, result in universe
+  - `DefuzzMethod::SmallestOfMaximum` — returns ≤ MOM, result in universe
+  - `DefuzzMethod::LargestOfMaximum` — returns ≥ MOM, result in universe
+  - Invariant `SOM ≤ MOM ≤ LOM` for any MF
+  - `discrete_cog`: `None` for unknown consequent, point count, limits
+    included, μ in [0,1], products = x×μ, numerator/denominator sums,
+    centroid formula, consistency with `compute()`
+- `rust-version = "1.70"` in `Cargo.toml`
+
+### Changed
+- `src/main.rs` removed (stub redirecting to `examples/demo.rs`);
+  `src/main.rs` added to `.gitignore`
+
+---
+
 ## [0.1.3] — 2026-04-30
 
 ### Fixed
