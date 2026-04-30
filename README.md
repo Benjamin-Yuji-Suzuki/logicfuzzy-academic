@@ -10,7 +10,7 @@ antecedent!(engine, "temperature", 0.0, 50.0, 501,
     "hot"  => trimf [25.0,50.0, 50.0],
 );
 engine.add_rule(rule!(IF temperature IS hot OR humidity IS high THEN fan_speed IS fast));
-let svg = engine.antecedent("temperature").to_svg_with_input(45.0);
+export_svg!(engine, "output/", aggregated);
 ```
 
 ---
@@ -28,25 +28,27 @@ let svg = engine.antecedent("temperature").to_svg_with_input(45.0);
 - **`rule!` macro** — declarative DSL for writing fuzzy rules in natural language
 - **`fuzzy_var!` macro** — creates a `FuzzyVariable` with universe and all terms in one block
 - **`antecedent!` / `consequent!` macros** — creates and registers variables directly in the engine
-- **`RuleBuilder`** — fluent builder API as an alternative to the macro
+- **`var_svg!` macro** — generates an SVG string from a variable, with or without an input marker
+- **`export_svg!` macro** — exports all engine variables to SVG files in one call
+- **`RuleBuilder`** — fluent builder API as an alternative to the `rule!` macro
 - **AND / OR connectors** — min (t-norm) and max (s-norm)
-- **`explain()`** — detailed pipeline report: fuzzification degrees, per-rule firing strengths, and crisp output with human-readable summary
-- **SVG visualization** — `to_svg()`, `to_svg_with_input()`, `export_svg()` — zero dependencies, opens in any browser
+- **`explain()`** — full pipeline report: fuzzification degrees, rule firing strengths, crisp output
+- **`discrete_cog()`** — step-by-step Centre-of-Gravity table matching textbook notation
+- **SVG visualization** — colour legend, μ annotations, clipped activation areas, aggregated output plot
 - **Zero fuzzy dependencies** — only Rust `std`
-- **171 tests** — unit tests + doctests covering the full pipeline
+- **165 tests** — unit tests + doctests covering the full pipeline
 
 ---
 
 ## Quick start
 
 ```toml
-# Cargo.toml
 [dependencies]
 fuzzy_mamdani = { path = "." }
 ```
 
 ```rust
-use fuzzy_mamdani::{MamdaniEngine, antecedent, consequent, rule};
+use fuzzy_mamdani::{MamdaniEngine, antecedent, consequent, rule, export_svg};
 
 fn main() {
     let mut engine = MamdaniEngine::new();
@@ -78,8 +80,8 @@ fn main() {
     let result = engine.compute();
     println!("fan_speed = {:.2}%", result["fan_speed"]); // ~67%
 
-    // Generate SVG for each variable (with input marker on antecedents)
-    engine.export_svg("output/").unwrap();
+    // Export SVGs for all variables + aggregated output
+    export_svg!(engine, "output/", aggregated);
 }
 ```
 
@@ -89,8 +91,8 @@ fn main() {
 
 ### `fuzzy_var!` — create a variable
 
-Creates a `FuzzyVariable` with universe and all linguistic terms in a single expression.
-Supports `trimf`, `trapmf`, and `gaussmf` — can be mixed in the same block.
+Creates a `FuzzyVariable` with its universe and all linguistic terms in one expression.
+Supports `trimf`, `trapmf`, and `gaussmf` — mixed in the same block.
 
 ```rust
 let temp = fuzzy_var!("temperature", 0.0, 50.0, 501,
@@ -119,60 +121,87 @@ rule!(IF temperature IS hot OR  humidity IS high THEN fan_speed IS fast)
 rule!(IF smoke_level IS high AND ambient_temp IS critical THEN alert_level IS maximum)
 ```
 
-Or using the fluent `RuleBuilder`:
+Or with the fluent `RuleBuilder`:
 
 ```rust
 RuleBuilder::new()
     .when("temperature", "hot")
-    .or("humidity",  "high")
+    .or("humidity", "high")
     .then("fan_speed", "fast")
 ```
+
+### `var_svg!` — generate SVG from a variable
+
+```rust
+use fuzzy_mamdani::{fuzzy_var, var_svg};
+
+let var = fuzzy_var!("temperature", 0.0, 50.0, 501,
+    "cold" => trimf [0.0,  0.0, 25.0],
+    "hot"  => trimf [25.0,50.0, 50.0],
+);
+
+// Clean MF plot — no input marker
+let svg = var_svg!(var);
+std::fs::write("temperature.svg", svg).unwrap();
+
+// With input marker at x = 35.0
+let svg = var_svg!(var, 35.0);
+std::fs::write("temperature_35.svg", svg).unwrap();
+```
+
+### `export_svg!` — export all engine variables
+
+```rust
+use fuzzy_mamdani::export_svg;
+
+engine.set_input("temperature", 45.0);
+engine.compute();
+
+// Membership function SVGs only
+export_svg!(engine, "output/");
+
+// Membership + aggregated output SVGs
+export_svg!(engine, "output/", aggregated);
+```
+
+Each call prints `✓` on success or `✗ Error: …` on failure. Antecedents automatically include the input marker when `set_input` has been called.
 
 ---
 
 ## SVG visualization
 
-The library generates self-contained SVG files for any `FuzzyVariable` — no matplotlib, no Python, no dependencies.
+Every SVG is self-contained and opens in any browser — no matplotlib, no Python, no tooling.
 
-### `FuzzyVariable::to_svg()`
+Each plot includes:
+- Coloured curves per linguistic term
+- Clipped activation area when an input is set
+- Horizontal dashed lines + dot annotations showing `μ_term(x) = value`
+- Vertical dashed marker at the crisp input value
+- Colour legend strip at the bottom
 
-Returns the SVG as a `String` — embeddable in HTML or saveable to disk.
-
-```rust
-let var = fuzzy_var!("temperature", 0.0, 50.0, 501,
-    "cold" => trimf [0.0,  0.0, 25.0],
-    "warm" => trimf [0.0, 25.0, 50.0],
-    "hot"  => trimf [25.0,50.0, 50.0],
-);
-std::fs::write("temperature.svg", var.to_svg()).unwrap();
-```
-
-### `FuzzyVariable::to_svg_with_input(value)`
-
-Adds a vertical dashed marker at the current crisp input — useful for showing how a value is fuzzified.
+The aggregated output SVG additionally shows:
+- Original MF curves (dashed)
+- Each term clipped at its firing degree `α`
+- Grey aggregated envelope
+- Yellow centroid marker
 
 ```rust
-std::fs::write("temperature.svg", var.to_svg_with_input(35.0)).unwrap();
-```
+// Individual variable — no input marker
+std::fs::write("temp.svg", var.to_svg()).unwrap();
 
-### `MamdaniEngine::export_svg(dir)`
+// Individual variable — with input marker
+std::fs::write("temp.svg", var.to_svg_with_input(35.0)).unwrap();
 
-Generates one `.svg` per variable in the given directory. Antecedents automatically include the input marker if `set_input` was called.
-
-```rust
-engine.set_input("temperature", 45.0);
-engine.set_input("humidity",    90.0);
+// All engine variables at once (antecedents include input markers)
 engine.export_svg("output/").unwrap();
-// Writes: output/temperature.svg  output/humidity.svg  output/fan_speed.svg
-```
 
-Open any `.svg` directly in a browser — no tooling required.
+// All engine variables + aggregated output SVGs
+engine.export_aggregated_svg("output/").unwrap();
+```
 
 ---
 
 ## `explain()` — inspecting the pipeline
-
-`explain()` returns an `ExplainReport` with the full intermediate state of every stage.
 
 ```rust
 engine.set_input("temperature", 5.0);
@@ -187,10 +216,10 @@ println!("{}", report.summary());
 
 [ Fuzzification ]
   humidity = 10.0000 (crisp)
-          low  1.0000  [██████████]
-       medium  0.2000  [██░░░░░░░░]
-         high  0.0000  [░░░░░░░░░░]
-    → dominant term: low
+          low  1.0000  [████████████]
+       medium  0.2000  [██░░░░░░░░░░]
+         high  0.0000  [░░░░░░░░░░░░]
+    -> dominant term: low
 
 [ Rule Evaluation ] (2 fired, 2 skipped)
   ✓ [0.8000]  IF (temperature is cold) AND (humidity is low) THEN fan_speed is slow
@@ -200,29 +229,52 @@ println!("{}", report.summary());
   fan_speed = 18.4956
 ```
 
+You can also inspect the report programmatically:
+
+```rust
+for rf in &report.rule_firings {
+    if rf.fired {
+        println!("{} -> alpha {:.4}", rf.rule_text, rf.firing_degree);
+    }
+}
+for fv in &report.fuzzification {
+    println!("{}: dominant = {:?}", fv.variable, fv.dominant_term());
+}
+println!("fan_speed = {:.4}", report.outputs["fan_speed"]);
+```
+
 ---
 
-## Included examples (`cargo run`)
+## `discrete_cog()` — step-by-step centroid table
 
-`src/main.rs` includes two complete systems based on the course Jupyter notebooks:
+Computes the Centre-of-Gravity at evenly-spaced discrete points, matching the
+step-by-step calculation shown in fuzzy control textbooks.
 
-**Sistema 1 — Gorjeta** (`SISTEMA_FUZZY_GORJETA.ipynb`)
+```rust
+engine.set_input("moisture",     38.0);
+engine.set_input("temperature",  31.0);
+engine.compute();
 
-| Variable | Universe | Terms |
-|---|---|---|
-| qualidade | [0, 10] | ruim / boa / muito_boa |
-| servico   | [0, 10] | ruim / aceitavel / otimo |
-| gorjeta   | [0, 25]% | baixa / media / alta |
+let table = engine.discrete_cog("valve", 10.0).unwrap();
+table.print("valve");
+```
 
-**Sistema 2 — Irrigação** (`SISTEMA_FUZZY_IRRIGACAO.ipynb`)
-
-| Variable    | Universe  | Functions | Terms |
-|---|---|---|---|
-| umidade     | [0, 100]% | trapmf / trimf / trapmf | baixa / media / alta |
-| temperatura | [0, 40]°C | trapmf / trimf / trapmf | fria / morna / quente |
-| irrigacao   | [0, 100]% | trapmf / trimf / trapmf | baixa / media / alta |
-
-Running `cargo run` executes both systems, prints fuzzification tables, rule firing degrees, scenario results, and writes SVGs to `output/gorjeta/` and `output/irrigacao/`.
+```
+  [ COG table — valve ]
+     I_i      mu_agg(I_i)       I_i * mu_agg(I_i)
+  ──────────────────────────────────────────────────
+     0.0        0.142857                  0.000000
+    10.0        0.142857                  1.428571
+    ...
+    80.0        0.500000                 40.000000
+    90.0        0.500000                 45.000000
+   100.0        0.500000                 50.000000
+  ──────────────────────────────────────────────────
+              3.828571                240.285714  <- sums
+  Numerator   = 240.285714
+  Denominator = 3.828571
+  Centroid    = 62.761194
+```
 
 ---
 
@@ -232,12 +284,12 @@ Running `cargo run` executes both systems, prints fuzzification tables, rule fir
 src/
 ├── lib.rs          — re-exports all public items
 ├── membership.rs   — trimf, trapmf, gaussmf, MembershipFn enum
-├── variable.rs     — Universe, Term, FuzzyVariable + to_svg / to_svg_with_input
+├── variable.rs     — Universe, Term, FuzzyVariable, to_svg / to_svg_with_input
 ├── rule.rs         — Connector (And/Or), Rule, RuleBuilder
-├── engine.rs       — MamdaniEngine — full pipeline + explain() + export_svg()
-├── explain.rs      — ExplainReport, RuleFiring, FuzzifiedVariable
-├── svg.rs          — pure-Rust SVG renderer (no deps)
-└── macros.rs       — rule!, fuzzy_var!, antecedent!, consequent!
+├── engine.rs       — MamdaniEngine — full pipeline, explain(), export_svg(), discrete_cog()
+├── explain.rs      — ExplainReport, RuleFiring, FuzzifiedVariable, CogTable
+├── svg.rs          — pure-Rust SVG renderer (zero dependencies)
+└── macros.rs       — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!
 ```
 
 ### Pipeline
@@ -261,25 +313,31 @@ crisp output
 
 ---
 
-## Running
+## Running the demo
 
 ```bash
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
-cargo run       # runs gorjeta + irrigacao examples, writes SVGs to output/
-cargo test      # 171 tests (unit + doctests)
+cargo run       # two complete systems + SVG export to output/
+cargo test      # 165 tests (unit + doctests)
 ```
+
+`cargo run` executes two Mamdani systems — Tip Control and Irrigation Control —
+printing fuzzification tables, rule firing degrees, discrete COG tables, scenario
+results, and writing SVGs to `output/gorjeta/` and `output/irrigacao/`.
 
 ---
 
 ## Changelog
 
 ### v0.1.2
-- Added `svg.rs` — pure-Rust SVG renderer (zero dependencies)
-- Added `FuzzyVariable::to_svg()` — membership function plot as SVG string
-- Added `FuzzyVariable::to_svg_with_input(value)` — SVG with vertical input marker
-- Added `MamdaniEngine::export_svg(dir)` — writes one SVG per variable to disk
-- Rewrote `src/main.rs` — two full examples based on course Jupyter notebooks (gorjeta + irrigação), including fuzzification tables, rule firing degrees, scenario tables, and SVG export
+- Added `svg.rs` — pure-Rust SVG renderer with colour legend, μ annotations, clipped activation areas
+- Added `FuzzyVariable::to_svg()` and `to_svg_with_input(value)`
+- Added `MamdaniEngine::export_svg(dir)` and `export_aggregated_svg(dir)`
+- Added `var_svg!` and `export_svg!` macros
+- Added `MamdaniEngine::discrete_cog(name, step)` — step-by-step COG table
+- Added `CogTable` with `print()` method
+- All output text translated to English; clippy clean
 
 ### v0.1.1
 - Added `fuzzy_var!`, `antecedent!`, `consequent!` macros
