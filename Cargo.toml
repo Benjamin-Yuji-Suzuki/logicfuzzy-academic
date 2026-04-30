@@ -1,0 +1,22 @@
+[package]
+name        = "logicfuzzy_academic"
+version     = "0.1.2"
+edition     = "2021"
+authors     = ["Benjamin Yuji Suzuki <github.com/Benjamin-Yuji-Suzuki>"]
+description = "Pure-Rust Mamdani Fuzzy Inference System — no external fuzzy crates"
+license     = "MIT"
+repository  = "https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic"
+readme      = "README.md"
+keywords    = ["fuzzy", "mamdani", "inference", "control", "ai"]
+categories  = ["science", "algorithms"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "fuzzy_mamdani"
+path = "src/lib.rs"
+
+[[bin]]
+name = "demo"
+path = "src/main.rs"
