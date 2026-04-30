@@ -665,12 +665,7 @@ impl MamdaniEngine {
                 }
             }
             // Use the configured defuzz method (not always centroid)
-            let centroid = self.defuzzify(
-                &pts,
-                &agg,
-                cons_var.universe.min,
-                cons_var.universe.max,
-            );
+            let centroid = self.defuzzify(&pts, &agg, cons_var.universe.min, cons_var.universe.max);
 
             let svg = crate::svg::render_aggregated_svg(cons_var, &firing, centroid);
             let path = Path::new(dir).join(format!("{}_aggregated.svg", nome));
