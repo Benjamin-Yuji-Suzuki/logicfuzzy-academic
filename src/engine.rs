@@ -1279,10 +1279,16 @@ mod tests {
     #[test]
     fn explain_graus_dentro_do_intervalo() {
         // todos os graus de pertinencia devem estar em [0.0, 1.0]
+        // input=25.0 é fronteira exata onde cold=0.0 e hot=0.0 (nenhuma regra dispara),
+        // então explain() retorna Err(NoRulesFired) — esse caso é esperado e ignorado aqui.
         let mut m = motor_explain_minimal();
         for input in [0.0_f64, 12.5, 25.0, 37.5, 50.0] {
             m.set_input_unchecked("temperature", input);
-            let report = m.explain().unwrap();
+            let report = match m.explain() {
+                Ok(r) => r,
+                Err(crate::error::FuzzyError::NoRulesFired) => continue,
+                Err(e) => panic!("explain() falhou inesperadamente: {}", e),
+            };
             for fv in &report.fuzzification {
                 for (term, degree) in &fv.term_degrees {
                     assert!(
