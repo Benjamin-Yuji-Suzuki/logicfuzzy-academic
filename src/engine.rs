@@ -400,10 +400,8 @@ impl MamdaniEngine {
             outputs.insert(nome.clone(), saida);
         }
 
-        let any_fired = outputs.values().any(|_| rules_fired > 0);
-        if !any_fired && !self.rules.is_empty() {
-            // Se ha regras mas nenhuma disparou, ainda retorna o report (util para debug)
-            // mas calcula outputs normalmente
+        if rules_fired == 0 && !self.rules.is_empty() {
+            return Err(FuzzyError::NoRulesFired);
         }
         Ok(ExplainReport {
             fuzzification,
@@ -666,13 +664,13 @@ impl MamdaniEngine {
                     }
                 }
             }
-            let num: f64 = pts.iter().zip(agg.iter()).map(|(&x, &mu)| x * mu).sum();
-            let den: f64 = agg.iter().sum();
-            let centroid = if den.abs() < f64::EPSILON {
-                (cons_var.universe.min + cons_var.universe.max) / 2.0
-            } else {
-                num / den
-            };
+            // Use the configured defuzz method (not always centroid)
+            let centroid = self.defuzzify(
+                &pts,
+                &agg,
+                cons_var.universe.min,
+                cons_var.universe.max,
+            );
 
             let svg = crate::svg::render_aggregated_svg(cons_var, &firing, centroid);
             let path = Path::new(dir).join(format!("{}_aggregated.svg", nome));
