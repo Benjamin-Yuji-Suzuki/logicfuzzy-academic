@@ -214,7 +214,7 @@ fn sistema_gorjeta() {
     // Method 1: export_svg! — all variables at once + aggregated
     engine.set_input_unchecked("food_quality", 6.5);
     engine.set_input_unchecked("service", 5.0);
-    engine.compute();
+    let _ = engine.compute();
     println!("  [1] export_svg!(engine, dir, aggregated)");
     export_svg!(engine, "output/gorjeta", aggregated);
 
@@ -404,7 +404,7 @@ fn sistema_irrigacao() {
     // Method 1: export_svg! macro
     engine.set_input_unchecked("moisture", 38.0);
     engine.set_input_unchecked("temperature", 31.0);
-    engine.compute();
+    let _ = engine.compute();
     println!("  [1] export_svg!(engine, dir, aggregated)");
     export_svg!(engine, "output/irrigacao", aggregated);
 
