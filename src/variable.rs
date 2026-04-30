@@ -48,7 +48,11 @@ impl Universe {
     pub fn new(min: f64, max: f64, resolution: usize) -> Self {
         assert!(min < max, "Universe: min must be less than max");
         assert!(resolution >= 2, "Universe: resolution must be >= 2");
-        Self { min, max, resolution }
+        Self {
+            min,
+            max,
+            resolution,
+        }
     }
 
     /// Alias for [`new`](Self::new) with a more readable argument order.
@@ -117,7 +121,10 @@ pub struct Term {
 impl Term {
     /// Creates a new term with a label and membership function.
     pub fn new(label: impl Into<String>, mf: MembershipFn) -> Self {
-        Self { label: label.into(), mf }
+        Self {
+            label: label.into(),
+            mf,
+        }
     }
 
     /// Evaluates the membership degree of value `x` for this term.
@@ -178,7 +185,8 @@ impl FuzzyVariable {
         assert!(
             !self.terms.iter().any(|t| t.label == term.label),
             "FuzzyVariable '{}': term '{}' already exists",
-            self.name, term.label
+            self.name,
+            term.label
         );
         self.terms.push(term);
     }
@@ -247,12 +255,9 @@ impl FuzzyVariable {
     ///
     /// Equivalent to: `skfuzzy.trimf(var.universe, params)`
     pub fn term_membership_curve(&self, label: &str) -> Vec<f64> {
-        let term = self.get_term(label).unwrap_or_else(|| {
-            panic!(
-                "FuzzyVariable '{}': term '{}' not found",
-                self.name, label
-            )
-        });
+        let term = self
+            .get_term(label)
+            .unwrap_or_else(|| panic!("FuzzyVariable '{}': term '{}' not found", self.name, label));
         let pts = self.universe_points();
         term.eval_universe(&pts)
     }
@@ -388,9 +393,9 @@ mod tests {
 
     fn make_var() -> FuzzyVariable {
         let mut v = FuzzyVariable::new("temperatura", Universe::new(0.0, 50.0, 501));
-        v.add_term(Term::new("fria",   MembershipFn::Trimf([0.0,  0.0, 25.0])));
-        v.add_term(Term::new("morna",  MembershipFn::Trimf([0.0, 25.0, 50.0])));
-        v.add_term(Term::new("quente", MembershipFn::Trimf([25.0,50.0, 50.0])));
+        v.add_term(Term::new("fria", MembershipFn::Trimf([0.0, 0.0, 25.0])));
+        v.add_term(Term::new("morna", MembershipFn::Trimf([0.0, 25.0, 50.0])));
+        v.add_term(Term::new("quente", MembershipFn::Trimf([25.0, 50.0, 50.0])));
         v
     }
 
@@ -456,9 +461,9 @@ mod tests {
         let v = make_var();
         // Em x=12.5: fria=0.5, morna=0.5
         let resultado = v.fuzzify(12.5);
-        let fria  = resultado.iter().find(|(l, _)| *l == "fria").unwrap().1;
+        let fria = resultado.iter().find(|(l, _)| *l == "fria").unwrap().1;
         let morna = resultado.iter().find(|(l, _)| *l == "morna").unwrap().1;
-        assert!((fria  - 0.5).abs() < 1e-10);
+        assert!((fria - 0.5).abs() < 1e-10);
         assert!((morna - 0.5).abs() < 1e-10);
     }
 
@@ -513,14 +518,21 @@ mod tests {
     fn antecedent_var_e_fuzzy_variable() {
         // AntecedentVar e so um alias — deve compilar e funcionar igual
         let mut ant: AntecedentVar = FuzzyVariable::new("umidade", Universe::new(0.0, 100.0, 101));
-        ant.add_term(Term::new("baixa", MembershipFn::Trapmf([0.0, 0.0, 30.0, 50.0])));
+        ant.add_term(Term::new(
+            "baixa",
+            MembershipFn::Trapmf([0.0, 0.0, 30.0, 50.0]),
+        ));
         assert_eq!(ant.membership_at("baixa", 0.0), 1.0);
     }
 
     #[test]
     fn consequent_var_e_fuzzy_variable() {
-        let mut con: ConsequentVar = FuzzyVariable::new("velocidade", Universe::new(0.0, 100.0, 101));
-        con.add_term(Term::new("rapida", MembershipFn::Trimf([60.0, 100.0, 100.0])));
+        let mut con: ConsequentVar =
+            FuzzyVariable::new("velocidade", Universe::new(0.0, 100.0, 101));
+        con.add_term(Term::new(
+            "rapida",
+            MembershipFn::Trimf([60.0, 100.0, 100.0]),
+        ));
         assert_eq!(con.membership_at("rapida", 100.0), 1.0);
     }
 
@@ -529,7 +541,10 @@ mod tests {
     #[test]
     fn var_trapmf_plano_central() {
         let mut v = FuzzyVariable::new("v", Universe::new(0.0, 100.0, 1001));
-        v.add_term(Term::new("medio", MembershipFn::Trapmf([20.0, 35.0, 65.0, 80.0])));
+        v.add_term(Term::new(
+            "medio",
+            MembershipFn::Trapmf([20.0, 35.0, 65.0, 80.0]),
+        ));
         // Qualquer ponto entre 35 e 65 deve retornar 1.0
         assert_eq!(v.membership_at("medio", 50.0), 1.0);
         assert_eq!(v.membership_at("medio", 35.0), 1.0);
@@ -539,8 +554,11 @@ mod tests {
     #[test]
     fn var_trapmf_rampa_aberta_esquerda() {
         let mut v = FuzzyVariable::new("v", Universe::new(0.0, 100.0, 1001));
-        v.add_term(Term::new("baixo", MembershipFn::Trapmf([0.0, 0.0, 25.0, 50.0])));
-        assert_eq!(v.membership_at("baixo", 0.0),  1.0);
+        v.add_term(Term::new(
+            "baixo",
+            MembershipFn::Trapmf([0.0, 0.0, 25.0, 50.0]),
+        ));
+        assert_eq!(v.membership_at("baixo", 0.0), 1.0);
         assert_eq!(v.membership_at("baixo", 10.0), 1.0);
         assert_eq!(v.membership_at("baixo", 50.0), 0.0);
     }

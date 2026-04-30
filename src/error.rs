@@ -57,15 +57,20 @@ impl std::error::Error for FuzzyError {}
 mod tests {
     use super::*;
 
-    #[test] fn missing_input_display() {
+    #[test]
+    fn missing_input_display() {
         let e = FuzzyError::MissingInput("temperature".to_string());
         assert!(e.to_string().contains("temperature"));
         assert!(e.to_string().contains("set_input"));
     }
 
-    #[test] fn out_of_range_display() {
+    #[test]
+    fn out_of_range_display() {
         let e = FuzzyError::InputOutOfRange {
-            variable: "temp".to_string(), value: 99.0, min: 0.0, max: 50.0,
+            variable: "temp".to_string(),
+            value: 99.0,
+            min: 0.0,
+            max: 50.0,
         };
         let s = e.to_string();
         assert!(s.contains("temp"));
@@ -73,18 +78,24 @@ mod tests {
         assert!(s.contains("clamped"));
     }
 
-    #[test] fn no_rules_fired_display() {
+    #[test]
+    fn no_rules_fired_display() {
         let e = FuzzyError::NoRulesFired;
         assert!(e.to_string().contains("zero"));
     }
 
-    #[test] fn error_is_std_error() {
+    #[test]
+    fn error_is_std_error() {
         let e: Box<dyn std::error::Error> = Box::new(FuzzyError::NoRulesFired);
         assert!(e.to_string().len() > 0);
     }
 
-    #[test] fn fuzzy_error_eq() {
+    #[test]
+    fn fuzzy_error_eq() {
         assert_eq!(FuzzyError::NoRulesFired, FuzzyError::NoRulesFired);
-        assert_ne!(FuzzyError::NoRulesFired, FuzzyError::MissingInput("x".to_string()));
+        assert_ne!(
+            FuzzyError::NoRulesFired,
+            FuzzyError::MissingInput("x".to_string())
+        );
     }
 }

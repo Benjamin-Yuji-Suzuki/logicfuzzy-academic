@@ -48,7 +48,10 @@ macro_rules! __make_term {
     ($label:literal, gaussmf, { mean: $mean:expr, sigma: $sigma:expr }) => {
         $crate::Term::new(
             $label,
-            $crate::MembershipFn::Gaussmf { mean: $mean as f64, sigma: $sigma as f64 },
+            $crate::MembershipFn::Gaussmf {
+                mean: $mean as f64,
+                sigma: $sigma as f64,
+            },
         )
     };
 }
@@ -327,7 +330,6 @@ macro_rules! rule {
     };
 }
 
-
 // ─────────────────────────────────────────────────────────────────
 // var_svg! — gera SVG de uma FuzzyVariable
 // ─────────────────────────────────────────────────────────────────
@@ -411,18 +413,18 @@ macro_rules! export_svg {
     // Somente MFs / membership functions only
     ($engine:expr, $dir:expr) => {{
         match $engine.export_svg($dir) {
-            Ok(_)  => println!("  ✓  SVGs → {}", $dir),
+            Ok(_) => println!("  ✓  SVGs → {}", $dir),
             Err(e) => println!("  ✗  Error writing SVGs to {}: {}", $dir, e),
         }
     }};
     // MFs + saída agregada / membership + aggregated output
     ($engine:expr, $dir:expr, aggregated) => {{
         match $engine.export_svg($dir) {
-            Ok(_)  => println!("  ✓  Membership SVGs → {}", $dir),
+            Ok(_) => println!("  ✓  Membership SVGs → {}", $dir),
             Err(e) => println!("  ✗  Error writing membership SVGs to {}: {}", $dir, e),
         }
         match $engine.export_aggregated_svg($dir) {
-            Ok(_)  => println!("  ✓  Aggregated SVGs → {}", $dir),
+            Ok(_) => println!("  ✓  Aggregated SVGs → {}", $dir),
             Err(e) => println!("  ✗  Error writing aggregated SVGs to {}: {}", $dir, e),
         }
     }};
@@ -444,7 +446,7 @@ mod tests {
         assert_eq!(r.antecedents().len(), 1);
         assert_eq!(r.antecedents()[0].0, "temperature");
         assert_eq!(r.antecedents()[0].1, "cold");
-        assert_eq!(r.consequent_var(),  "fan_speed");
+        assert_eq!(r.consequent_var(), "fan_speed");
         assert_eq!(r.consequent_term(), "slow");
     }
 
@@ -476,31 +478,37 @@ mod tests {
 
     #[test]
     fn rule_underscore_identifiers() {
-        let r = rule!(IF smoke_level IS high AND ambient_temp IS critical THEN alert_level IS maximum);
+        let r =
+            rule!(IF smoke_level IS high AND ambient_temp IS critical THEN alert_level IS maximum);
         assert_eq!(r.antecedents()[0].0, "smoke_level");
         assert_eq!(r.antecedents()[1].0, "ambient_temp");
-        assert_eq!(r.consequent_var(),   "alert_level");
-        assert_eq!(r.consequent_term(),  "maximum");
+        assert_eq!(r.consequent_var(), "alert_level");
+        assert_eq!(r.consequent_term(), "maximum");
     }
 
     #[test]
     fn rule_equivalent_to_builder() {
         use crate::rule::RuleBuilder;
-        let via_macro   = rule!(IF temperatura IS quente AND umidade IS alta THEN velocidade IS rapida);
+        let via_macro =
+            rule!(IF temperatura IS quente AND umidade IS alta THEN velocidade IS rapida);
         let via_builder = RuleBuilder::new()
             .when("temperatura", "quente")
             .and("umidade", "alta")
             .then("velocidade", "rapida")
             .build();
-        assert_eq!(via_macro.antecedents().len(),  via_builder.antecedents().len());
-        assert_eq!(via_macro.connector(),          via_builder.connector());
-        assert_eq!(via_macro.consequent_var(),     via_builder.consequent_var());
-        assert_eq!(via_macro.consequent_term(),    via_builder.consequent_term());
+        assert_eq!(
+            via_macro.antecedents().len(),
+            via_builder.antecedents().len()
+        );
+        assert_eq!(via_macro.connector(), via_builder.connector());
+        assert_eq!(via_macro.consequent_var(), via_builder.consequent_var());
+        assert_eq!(via_macro.consequent_term(), via_builder.consequent_term());
     }
 
     #[test]
     fn rule_to_string_readable() {
-        let r = rule!(IF temperatura IS quente OR umidade IS alta THEN velocidade_ventilador IS rapida);
+        let r =
+            rule!(IF temperatura IS quente OR umidade IS alta THEN velocidade_ventilador IS rapida);
         let s = r.to_string();
         assert!(s.contains("temperatura"));
         assert!(s.contains("quente"));

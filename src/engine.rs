@@ -37,11 +37,11 @@
 //! assert!(resultado["velocidade"] < 50.0); // ventilador lento
 //! ```
 
-use std::collections::HashMap;
-use crate::variable::FuzzyVariable;
-use crate::rule::Rule;
-use crate::explain::{ExplainReport, FuzzifiedVariable, RuleFiring};
 use crate::error::FuzzyError;
+use crate::explain::{ExplainReport, FuzzifiedVariable, RuleFiring};
+use crate::rule::Rule;
+use crate::variable::FuzzyVariable;
+use std::collections::HashMap;
 
 // ─────────────────────────────────────────────────────────────────
 // MamdaniEngine
@@ -71,7 +71,6 @@ pub struct MamdaniEngine {
     /// Defuzzification method to use in compute(). Default: Centroid.
     defuzz_method: DefuzzMethod,
 }
-
 
 // ─────────────────────────────────────────────────────────────────
 // DefuzzMethod
@@ -103,10 +102,10 @@ impl MamdaniEngine {
     /// Creates an empty engine (no variables or rules).
     pub fn new() -> Self {
         Self {
-            antecedents:   HashMap::new(),
-            consequents:   HashMap::new(),
-            rules:         Vec::new(),
-            inputs:        HashMap::new(),
+            antecedents: HashMap::new(),
+            consequents: HashMap::new(),
+            rules: Vec::new(),
+            inputs: HashMap::new(),
             defuzz_method: DefuzzMethod::Centroid,
         }
     }
@@ -170,7 +169,9 @@ impl MamdaniEngine {
     /// ```
     pub fn set_input(&mut self, name: &str, value: f64) -> Result<(), FuzzyError> {
         // Verifica se a variavel existe
-        let var = self.antecedents.get(name)
+        let var = self
+            .antecedents
+            .get(name)
             .ok_or_else(|| FuzzyError::MissingInput(name.to_string()))?;
 
         let min = var.universe.min;
@@ -234,14 +235,14 @@ impl MamdaniEngine {
         // ── (4) Inicializa acumulador de agregacao com zeros ──────
         // Para cada consequente, cria um vetor de zeros com o tamanho
         // do universo discretizado — sera preenchido pelo max entre regras.
-        let mut agregado: HashMap<String, Vec<f64>> = self.consequents
+        let mut agregado: HashMap<String, Vec<f64>> = self
+            .consequents
             .iter()
             .map(|(nome, var)| (nome.clone(), vec![0.0_f64; var.universe.resolution]))
             .collect();
 
         // ── (1+2+3) Fuzzificacao → Inferencia → Clip ─────────────
         for regra in &self.rules {
-
             // (1+2) Fuzzificacao + Inferencia: grau de disparo da regra
             // AND → min dos graus de pertinencia dos antecedentes
             // OR  → max dos graus de pertinencia dos antecedentes
@@ -256,13 +257,15 @@ impl MamdaniEngine {
             for (nome_cons, termo_cons) in regra.consequents() {
                 let cons_var = match self.consequents.get(nome_cons.as_str()) {
                     Some(v) => v,
-                    None    => continue,
+                    None => continue,
                 };
                 let curva_mf = cons_var.term_membership_curve(termo_cons);
                 let agg = agregado.get_mut(nome_cons.as_str()).unwrap();
                 for (i, &mu) in curva_mf.iter().enumerate() {
                     let recortado = mu.min(grau);
-                    if recortado > agg[i] { agg[i] = recortado; }
+                    if recortado > agg[i] {
+                        agg[i] = recortado;
+                    }
                 }
             }
         }
@@ -277,10 +280,12 @@ impl MamdaniEngine {
         let mut resultados = HashMap::new();
         for (nome, agg_mf) in &agregado {
             let cons_var = &self.consequents[nome];
-            let pontos   = cons_var.universe_points();
-            let saida    = self.defuzzify(
-                &pontos, agg_mf,
-                cons_var.universe.min, cons_var.universe.max,
+            let pontos = cons_var.universe_points();
+            let saida = self.defuzzify(
+                &pontos,
+                agg_mf,
+                cons_var.universe.min,
+                cons_var.universe.max,
             );
             resultados.insert(nome.clone(), saida);
         }
@@ -315,11 +320,13 @@ impl MamdaniEngine {
     /// ```
     pub fn explain(&self) -> Result<ExplainReport, FuzzyError> {
         // ── Etapa 1: Fuzzificacao — coleta graus de todos os termos ──
-        let mut fuzzification: Vec<FuzzifiedVariable> = self.antecedents
+        let mut fuzzification: Vec<FuzzifiedVariable> = self
+            .antecedents
             .iter()
             .map(|(nome, var)| {
                 let crisp = *self.inputs.get(nome).unwrap_or(&0.0);
-                let term_degrees = var.fuzzify(crisp)
+                let term_degrees = var
+                    .fuzzify(crisp)
                     .into_iter()
                     .map(|(label, degree)| (label.to_string(), degree))
                     .collect();
@@ -335,14 +342,15 @@ impl MamdaniEngine {
         fuzzification.sort_by(|a, b| a.variable.cmp(&b.variable));
 
         // ── Etapa 2: Agregacao (mesmo pipeline do compute) ───────────
-        let mut agregado: HashMap<String, Vec<f64>> = self.consequents
+        let mut agregado: HashMap<String, Vec<f64>> = self
+            .consequents
             .iter()
             .map(|(nome, var)| (nome.clone(), vec![0.0_f64; var.universe.resolution]))
             .collect();
 
         // ── Etapa 2+3: Avalia cada regra e registra o disparo ────────
         let mut rule_firings: Vec<RuleFiring> = Vec::with_capacity(self.rules.len());
-        let mut rules_fired   = 0usize;
+        let mut rules_fired = 0usize;
         let mut rules_skipped = 0usize;
 
         for regra in &self.rules {
@@ -350,10 +358,10 @@ impl MamdaniEngine {
             let fired = grau > 0.0;
 
             rule_firings.push(RuleFiring {
-                rule_text:       regra.to_string(),
-                firing_degree:   grau,
+                rule_text: regra.to_string(),
+                firing_degree: grau,
                 fired,
-                consequent_var:  regra.consequent_var().to_string(),
+                consequent_var: regra.consequent_var().to_string(),
                 consequent_term: regra.consequent_term().to_string(),
             });
 
@@ -370,7 +378,9 @@ impl MamdaniEngine {
                     let agg = agregado.get_mut(nome_cons.as_str()).unwrap();
                     for (i, &mu) in curva_mf.iter().enumerate() {
                         let recortado = mu.min(grau);
-                        if recortado > agg[i] { agg[i] = recortado; }
+                        if recortado > agg[i] {
+                            agg[i] = recortado;
+                        }
                     }
                 }
             }
@@ -380,10 +390,12 @@ impl MamdaniEngine {
         let mut outputs = HashMap::new();
         for (nome, agg_mf) in &agregado {
             let cons_var = &self.consequents[nome];
-            let pontos   = cons_var.universe_points();
-            let saida    = self.defuzzify(
-                &pontos, agg_mf,
-                cons_var.universe.min, cons_var.universe.max,
+            let pontos = cons_var.universe_points();
+            let saida = self.defuzzify(
+                &pontos,
+                agg_mf,
+                cons_var.universe.min,
+                cons_var.universe.max,
             );
             outputs.insert(nome.clone(), saida);
         }
@@ -393,7 +405,13 @@ impl MamdaniEngine {
             // Se ha regras mas nenhuma disparou, ainda retorna o report (util para debug)
             // mas calcula outputs normalmente
         }
-        Ok(ExplainReport { fuzzification, rule_firings, outputs, rules_fired, rules_skipped })
+        Ok(ExplainReport {
+            fuzzification,
+            rule_firings,
+            outputs,
+            rules_fired,
+            rules_skipped,
+        })
     }
 
     /// Prints all rules in the rule base in human-readable format.
@@ -410,17 +428,21 @@ impl MamdaniEngine {
         println!("=== Fuzzy Mamdani System ===");
         println!("Antecedents ({}):", self.antecedents.len());
         for (name, var) in &self.antecedents {
-            println!("  {} ∈ [{}, {}] | terms: [{}]",
+            println!(
+                "  {} ∈ [{}, {}] | terms: [{}]",
                 name,
-                var.universe.min, var.universe.max,
+                var.universe.min,
+                var.universe.max,
                 var.term_labels().join(", ")
             );
         }
         println!("Consequents ({}):", self.consequents.len());
         for (name, var) in &self.consequents {
-            println!("  {} ∈ [{}, {}] | terms: [{}]",
+            println!(
+                "  {} ∈ [{}, {}] | terms: [{}]",
                 name,
-                var.universe.min, var.universe.max,
+                var.universe.min,
+                var.universe.max,
                 var.term_labels().join(", ")
             );
         }
@@ -458,34 +480,53 @@ impl MamdaniEngine {
                 // Centro de Gravidade: Σ(x·μ) / Σ(μ)
                 let num: f64 = pts.iter().zip(agg.iter()).map(|(&x, &m)| x * m).sum();
                 let den: f64 = agg.iter().sum();
-                if den.abs() < f64::EPSILON { fallback } else { num / den }
+                if den.abs() < f64::EPSILON {
+                    fallback
+                } else {
+                    num / den
+                }
             }
             DefuzzMethod::Bisector => {
                 // Bissectriz: ponto que divide a area total ao meio
                 let total: f64 = agg.iter().sum();
-                if total < f64::EPSILON { return fallback; }
+                if total < f64::EPSILON {
+                    return fallback;
+                }
                 let half = total / 2.0;
                 let mut acc = 0.0;
                 for (i, &m) in agg.iter().enumerate() {
                     acc += m;
-                    if acc >= half { return pts[i]; }
+                    if acc >= half {
+                        return pts[i];
+                    }
                 }
                 *pts.last().unwrap_or(&fallback)
             }
             DefuzzMethod::MeanOfMaximum => {
                 // Media dos Maximos: media dos x onde μ é maximo
                 let max_mu = agg.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                if max_mu < f64::EPSILON { return fallback; }
-                let (sum_x, count) = pts.iter().zip(agg.iter())
+                if max_mu < f64::EPSILON {
+                    return fallback;
+                }
+                let (sum_x, count) = pts
+                    .iter()
+                    .zip(agg.iter())
                     .filter(|(_, &m)| (m - max_mu).abs() < 1e-9)
                     .fold((0.0_f64, 0_usize), |(s, c), (&x, _)| (s + x, c + 1));
-                if count == 0 { fallback } else { sum_x / count as f64 }
+                if count == 0 {
+                    fallback
+                } else {
+                    sum_x / count as f64
+                }
             }
             DefuzzMethod::SmallestOfMaximum => {
                 // Menor dos Maximos: primeiro x onde μ é maximo
                 let max_mu = agg.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                if max_mu < f64::EPSILON { return fallback; }
-                pts.iter().zip(agg.iter())
+                if max_mu < f64::EPSILON {
+                    return fallback;
+                }
+                pts.iter()
+                    .zip(agg.iter())
                     .find(|(_, &m)| (m - max_mu).abs() < 1e-9)
                     .map(|(&x, _)| x)
                     .unwrap_or(fallback)
@@ -493,8 +534,11 @@ impl MamdaniEngine {
             DefuzzMethod::LargestOfMaximum => {
                 // Maior dos Maximos: ultimo x onde μ é maximo
                 let max_mu = agg.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                if max_mu < f64::EPSILON { return fallback; }
-                pts.iter().zip(agg.iter())
+                if max_mu < f64::EPSILON {
+                    return fallback;
+                }
+                pts.iter()
+                    .zip(agg.iter())
                     .rfind(|(_, &m)| (m - max_mu).abs() < 1e-9)
                     .map(|(&x, _)| x)
                     .unwrap_or(fallback)
@@ -552,14 +596,14 @@ impl MamdaniEngine {
         // Antecedentes: inclui linha do valor de entrada se disponível
         for (name, var) in &self.antecedents {
             let input = self.inputs.get(name.as_str()).copied();
-            let svg   = crate::svg::render_variable_svg(var, input);
-            let path  = Path::new(dir).join(format!("{}.svg", name));
+            let svg = crate::svg::render_variable_svg(var, input);
+            let path = Path::new(dir).join(format!("{}.svg", name));
             fs::write(path, svg)?;
         }
 
         // Consequentes: só as curvas, sem marcador de entrada
         for (name, var) in &self.consequents {
-            let svg  = crate::svg::render_variable_svg(var, None);
+            let svg = crate::svg::render_variable_svg(var, None);
             let path = Path::new(dir).join(format!("{}.svg", name));
             fs::write(path, svg)?;
         }
@@ -581,8 +625,11 @@ impl MamdaniEngine {
         fs::create_dir_all(dir)?;
 
         // Recalcula o pipeline para coletar os graus de disparo por consequente
-        let mut firing_by_term: std::collections::HashMap<String, Vec<(String, f64)>> =
-            self.consequents.keys().map(|k| (k.clone(), Vec::new())).collect();
+        let mut firing_by_term: std::collections::HashMap<String, Vec<(String, f64)>> = self
+            .consequents
+            .keys()
+            .map(|k| (k.clone(), Vec::new()))
+            .collect();
 
         for regra in &self.rules {
             let grau = regra.firing_strength(&self.inputs, &self.antecedents);
@@ -591,7 +638,9 @@ impl MamdaniEngine {
                 .or_default();
             // Agrega: máximo por termo consequente
             if let Some(pos) = entry.iter().position(|(l, _)| l == regra.consequent_term()) {
-                if grau > entry[pos].1 { entry[pos].1 = grau; }
+                if grau > entry[pos].1 {
+                    entry[pos].1 = grau;
+                }
             } else {
                 entry.push((regra.consequent_term().to_string(), grau));
             }
@@ -611,7 +660,9 @@ impl MamdaniEngine {
                 if let Some(term) = cons_var.get_term(lbl) {
                     for (i, &x) in pts.iter().enumerate() {
                         let clipped = term.mf.eval(x).min(*deg);
-                        if clipped > agg[i] { agg[i] = clipped; }
+                        if clipped > agg[i] {
+                            agg[i] = clipped;
+                        }
                     }
                 }
             }
@@ -619,7 +670,9 @@ impl MamdaniEngine {
             let den: f64 = agg.iter().sum();
             let centroid = if den.abs() < f64::EPSILON {
                 (cons_var.universe.min + cons_var.universe.max) / 2.0
-            } else { num / den };
+            } else {
+                num / den
+            };
 
             let svg = crate::svg::render_aggregated_svg(cons_var, &firing, centroid);
             let path = Path::new(dir).join(format!("{}_aggregated.svg", nome));
@@ -648,21 +701,31 @@ impl MamdaniEngine {
     /// let table = engine.discrete_cog("y", 10.0).unwrap();
     /// println!("centroid = {:.4}", table.centroid);
     /// ```
-    pub fn discrete_cog(&self, consequent_name: &str, step: f64) -> Option<crate::explain::CogTable> {
+    pub fn discrete_cog(
+        &self,
+        consequent_name: &str,
+        step: f64,
+    ) -> Option<crate::explain::CogTable> {
         let cons_var = self.consequents.get(consequent_name)?;
-        let pts      = cons_var.universe_points();
-        let n        = pts.len();
+        let pts = cons_var.universe_points();
+        let n = pts.len();
 
         // Re-compute aggregated MF
         let mut agg = vec![0.0_f64; n];
         for regra in &self.rules {
-            if regra.consequent_var() != consequent_name { continue; }
-            let grau  = regra.firing_strength(&self.inputs, &self.antecedents);
-            if grau < 1e-12 { continue; }
+            if regra.consequent_var() != consequent_name {
+                continue;
+            }
+            let grau = regra.firing_strength(&self.inputs, &self.antecedents);
+            if grau < 1e-12 {
+                continue;
+            }
             if let Some(term) = cons_var.get_term(regra.consequent_term()) {
                 for (i, &x) in pts.iter().enumerate() {
                     let c = term.mf.eval(x).min(grau);
-                    if c > agg[i] { agg[i] = c; }
+                    if c > agg[i] {
+                        agg[i] = c;
+                    }
                 }
             }
         }
@@ -677,27 +740,54 @@ impl MamdaniEngine {
             v += step;
         }
 
-        let mu_values: Vec<f64> = disc_pts.iter().map(|&x| {
-            // Linear interpolation into agg
-            if pts.is_empty() { return 0.0; }
-            let pos = pts.partition_point(|&u| u <= x);
-            if pos == 0 { return agg[0]; }
-            if pos >= n { return *agg.last().unwrap(); }
-            let i  = pos - 1;
-            let x0 = pts[i]; let x1 = pts[i + 1];
-            let y0 = agg[i]; let y1 = agg[i + 1];
-            if (x1 - x0).abs() < f64::EPSILON { y0 }
-            else { y0 + (y1 - y0) * (x - x0) / (x1 - x0) }
-        }).collect();
+        let mu_values: Vec<f64> = disc_pts
+            .iter()
+            .map(|&x| {
+                // Linear interpolation into agg
+                if pts.is_empty() {
+                    return 0.0;
+                }
+                let pos = pts.partition_point(|&u| u <= x);
+                if pos == 0 {
+                    return agg[0];
+                }
+                if pos >= n {
+                    return *agg.last().unwrap();
+                }
+                let i = pos - 1;
+                let x0 = pts[i];
+                let x1 = pts[i + 1];
+                let y0 = agg[i];
+                let y1 = agg[i + 1];
+                if (x1 - x0).abs() < f64::EPSILON {
+                    y0
+                } else {
+                    y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+                }
+            })
+            .collect();
 
-        let products: Vec<f64>  = disc_pts.iter().zip(mu_values.iter()).map(|(&x, &m)| x * m).collect();
-        let numerator:   f64    = products.iter().sum();
-        let denominator: f64    = mu_values.iter().sum();
+        let products: Vec<f64> = disc_pts
+            .iter()
+            .zip(mu_values.iter())
+            .map(|(&x, &m)| x * m)
+            .collect();
+        let numerator: f64 = products.iter().sum();
+        let denominator: f64 = mu_values.iter().sum();
         let centroid = if denominator.abs() < f64::EPSILON {
             (min + max) / 2.0
-        } else { numerator / denominator };
+        } else {
+            numerator / denominator
+        };
 
-        Some(crate::explain::CogTable { disc_pts, mu_values, products, numerator, denominator, centroid })
+        Some(crate::explain::CogTable {
+            disc_pts,
+            mu_values,
+            products,
+            numerator,
+            denominator,
+            centroid,
+        })
     }
 }
 
@@ -714,17 +804,14 @@ impl Default for MamdaniEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FuzzyVariable, Universe, Term, MembershipFn};
     use crate::rule::RuleBuilder;
+    use crate::{FuzzyVariable, MembershipFn, Term, Universe};
 
     // ── Sistema minimal para testes analiticos ─────────────────
 
     /// Monta um sistema com 1 entrada, 1 saida e 1 regra.
     /// Retorna (motor, nome_da_saida)
-    fn motor_simples(
-        mf_entrada: MembershipFn,
-        mf_saida: MembershipFn,
-    ) -> MamdaniEngine {
+    fn motor_simples(mf_entrada: MembershipFn, mf_saida: MembershipFn) -> MamdaniEngine {
         let mut motor = MamdaniEngine::new();
 
         let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 1001));
@@ -735,9 +822,7 @@ mod tests {
         y.add_term(Term::new("b", mf_saida));
         motor.add_consequent(y);
 
-        motor.add_rule(
-            RuleBuilder::new().when("x", "a").then("y", "b").build()
-        );
+        motor.add_rule(RuleBuilder::new().when("x", "a").then("y", "b").build());
         motor
     }
 
@@ -773,7 +858,7 @@ mod tests {
             MembershipFn::Trimf([0.0, 0.0, 10.0]),
             MembershipFn::Trimf([0.0, 0.0, 10.0]),
         );
-        m.add_rule(RuleBuilder::new().when("x","a").then("y","b").build());
+        m.add_rule(RuleBuilder::new().when("x", "a").then("y", "b").build());
         assert_eq!(m.rule_count(), 2);
     }
 
@@ -781,16 +866,16 @@ mod tests {
     #[should_panic(expected = "already registered")]
     fn engine_antecedente_duplicado_panics() {
         let mut m = MamdaniEngine::new();
-        m.add_antecedent(FuzzyVariable::new("v", Universe::new(0.0,10.0,101)));
-        m.add_antecedent(FuzzyVariable::new("v", Universe::new(0.0,10.0,101)));
+        m.add_antecedent(FuzzyVariable::new("v", Universe::new(0.0, 10.0, 101)));
+        m.add_antecedent(FuzzyVariable::new("v", Universe::new(0.0, 10.0, 101)));
     }
 
     #[test]
     #[should_panic(expected = "already registered")]
     fn engine_consequente_duplicado_panics() {
         let mut m = MamdaniEngine::new();
-        m.add_consequent(FuzzyVariable::new("v", Universe::new(0.0,10.0,101)));
-        m.add_consequent(FuzzyVariable::new("v", Universe::new(0.0,10.0,101)));
+        m.add_consequent(FuzzyVariable::new("v", Universe::new(0.0, 10.0, 101)));
+        m.add_consequent(FuzzyVariable::new("v", Universe::new(0.0, 10.0, 101)));
     }
 
     // ── Defuzzificacao: centroide analitico ────────────────────
@@ -814,7 +899,7 @@ mod tests {
         // centroide analitico = 2/3 * 10 = 6.667
         let mut m = motor_simples(
             MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]), // disparo total
-            MembershipFn::Trimf([0.0, 10.0, 10.0]),        // rampa crescente
+            MembershipFn::Trimf([0.0, 10.0, 10.0]),       // rampa crescente
         );
         m.set_input_unchecked("x", 5.0);
         let r = m.compute().unwrap();
@@ -840,10 +925,7 @@ mod tests {
     fn clip_grau_pleno_nao_altera_centroide() {
         // Com grau=1.0 o clip nao muda nada — centroide identico ao sem clip
         let mf = MembershipFn::Trimf([0.0, 5.0, 10.0]);
-        let mut m = motor_simples(
-            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
-            mf,
-        );
+        let mut m = motor_simples(MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]), mf);
         m.set_input_unchecked("x", 5.0); // grau=1.0
         let r = m.compute().unwrap();
         // Centroide de trimf[0,5,10] = 5.0 (simetrico)
@@ -854,7 +936,7 @@ mod tests {
     fn clip_grau_zero_retorna_ponto_medio_do_universo() {
         // Grau=0.0: nenhuma regra dispara → compute() retorna Err(NoRulesFired)
         let mut m = motor_simples(
-            MembershipFn::Trimf([0.0, 0.0, 5.0]),  // fora da regiao de x=8
+            MembershipFn::Trimf([0.0, 0.0, 5.0]), // fora da regiao de x=8
             MembershipFn::Trimf([0.0, 5.0, 10.0]),
         );
         m.set_input_unchecked("x", 8.0); // grau de "a" em 8.0 = 0.0
@@ -884,8 +966,12 @@ mod tests {
         let r_pleno = m2.compute().unwrap();
 
         // Com clip em 0.5, centroide deve ser menor que com grau pleno
-        assert!(r_clip["y"] < r_pleno["y"],
-            "clip={:.3} pleno={:.3}", r_clip["y"], r_pleno["y"]);
+        assert!(
+            r_clip["y"] < r_pleno["y"],
+            "clip={:.3} pleno={:.3}",
+            r_clip["y"],
+            r_pleno["y"]
+        );
     }
 
     // ── Agregacao: max entre regras ────────────────────────────
@@ -899,23 +985,35 @@ mod tests {
 
         let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 1001));
         x.add_term(Term::new("esq", MembershipFn::Trapmf([0.0, 0.0, 1.0, 2.0])));
-        x.add_term(Term::new("dir", MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0])));
+        x.add_term(Term::new(
+            "dir",
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+        ));
         // Evitar complexidade: usar x com grau pleno via trapmf amplo
         motor.add_antecedent(x);
 
         let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 1001));
         y.add_term(Term::new("baixo", MembershipFn::Trimf([0.0, 2.5, 5.0])));
-        y.add_term(Term::new("alto",  MembershipFn::Trimf([5.0, 7.5, 10.0])));
+        y.add_term(Term::new("alto", MembershipFn::Trimf([5.0, 7.5, 10.0])));
         motor.add_consequent(y);
 
-        motor.add_rule(RuleBuilder::new().when("x","esq").then("y","baixo").build());
-        motor.add_rule(RuleBuilder::new().when("x","esq").then("y","alto").build());
+        motor.add_rule(
+            RuleBuilder::new()
+                .when("x", "esq")
+                .then("y", "baixo")
+                .build(),
+        );
+        motor.add_rule(
+            RuleBuilder::new()
+                .when("x", "esq")
+                .then("y", "alto")
+                .build(),
+        );
 
         motor.set_input_unchecked("x", 0.0); // x=0 → esq=1.0
         let r = motor.compute().unwrap();
         // Com ambas as saidas ativas em grau=1.0, centroide deve estar em torno de 5.0
-        assert!(r["y"] > 2.5 && r["y"] < 7.5,
-            "centroide={:.3}", r["y"]);
+        assert!(r["y"] > 2.5 && r["y"] < 7.5, "centroide={:.3}", r["y"]);
     }
 
     #[test]
@@ -925,17 +1023,30 @@ mod tests {
         let mut motor = MamdaniEngine::new();
 
         let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 1001));
-        x.add_term(Term::new("tudo", MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0])));
+        x.add_term(Term::new(
+            "tudo",
+            MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
+        ));
         motor.add_antecedent(x);
 
         let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 1001));
         y.add_term(Term::new("baixo", MembershipFn::Trimf([0.0, 0.0, 5.0])));
-        y.add_term(Term::new("alto",  MembershipFn::Trimf([5.0,10.0,10.0])));
+        y.add_term(Term::new("alto", MembershipFn::Trimf([5.0, 10.0, 10.0])));
         motor.add_consequent(y);
 
         // Ambas disparando com grau=1.0 → MFs simétricas → centroide=5.0
-        motor.add_rule(RuleBuilder::new().when("x","tudo").then("y","baixo").build());
-        motor.add_rule(RuleBuilder::new().when("x","tudo").then("y","alto").build());
+        motor.add_rule(
+            RuleBuilder::new()
+                .when("x", "tudo")
+                .then("y", "baixo")
+                .build(),
+        );
+        motor.add_rule(
+            RuleBuilder::new()
+                .when("x", "tudo")
+                .then("y", "alto")
+                .build(),
+        );
 
         motor.set_input_unchecked("x", 5.0);
         let r = motor.compute().unwrap();
@@ -949,34 +1060,61 @@ mod tests {
 
         // Entrada 1: temperatura [0, 50] °C
         let mut temp = FuzzyVariable::new("temperatura", Universe::new(0.0, 50.0, 501));
-        temp.add_term(Term::new("fria",   MembershipFn::Trimf([0.0,  0.0, 25.0])));
-        temp.add_term(Term::new("morna",  MembershipFn::Trimf([0.0, 25.0, 50.0])));
-        temp.add_term(Term::new("quente", MembershipFn::Trimf([25.0,50.0, 50.0])));
+        temp.add_term(Term::new("fria", MembershipFn::Trimf([0.0, 0.0, 25.0])));
+        temp.add_term(Term::new("morna", MembershipFn::Trimf([0.0, 25.0, 50.0])));
+        temp.add_term(Term::new("quente", MembershipFn::Trimf([25.0, 50.0, 50.0])));
         motor.add_antecedent(temp);
 
         // Entrada 2: umidade [0, 100] %
         let mut umid = FuzzyVariable::new("umidade", Universe::new(0.0, 100.0, 1001));
-        umid.add_term(Term::new("baixa", MembershipFn::Trimf([0.0,  0.0,  50.0])));
+        umid.add_term(Term::new("baixa", MembershipFn::Trimf([0.0, 0.0, 50.0])));
         umid.add_term(Term::new("media", MembershipFn::Trimf([0.0, 50.0, 100.0])));
-        umid.add_term(Term::new("alta",  MembershipFn::Trimf([50.0,100.0,100.0])));
+        umid.add_term(Term::new("alta", MembershipFn::Trimf([50.0, 100.0, 100.0])));
         motor.add_antecedent(umid);
 
         // Saida: velocidade do ventilador [0, 100] %
         let mut vel = FuzzyVariable::new("velocidade_ventilador", Universe::new(0.0, 100.0, 1001));
-        vel.add_term(Term::new("lenta",  MembershipFn::Trimf([0.0,  0.0,  50.0])));
-        vel.add_term(Term::new("media",  MembershipFn::Trimf([0.0, 50.0, 100.0])));
-        vel.add_term(Term::new("rapida", MembershipFn::Trimf([50.0,100.0,100.0])));
+        vel.add_term(Term::new("lenta", MembershipFn::Trimf([0.0, 0.0, 50.0])));
+        vel.add_term(Term::new("media", MembershipFn::Trimf([0.0, 50.0, 100.0])));
+        vel.add_term(Term::new(
+            "rapida",
+            MembershipFn::Trimf([50.0, 100.0, 100.0]),
+        ));
         motor.add_consequent(vel);
 
         // Base de regras (≥ 4 regras conforme checklist)
         // Regra 1: SE temp fria   AND umid baixa  ENTAO lenta
-        motor.add_rule(RuleBuilder::new().when("temperatura","fria").and("umidade","baixa").then("velocidade_ventilador","lenta").build());
+        motor.add_rule(
+            RuleBuilder::new()
+                .when("temperatura", "fria")
+                .and("umidade", "baixa")
+                .then("velocidade_ventilador", "lenta")
+                .build(),
+        );
         // Regra 2: SE temp morna  AND umid media  ENTAO media
-        motor.add_rule(RuleBuilder::new().when("temperatura","morna").and("umidade","media").then("velocidade_ventilador","media").build());
+        motor.add_rule(
+            RuleBuilder::new()
+                .when("temperatura", "morna")
+                .and("umidade", "media")
+                .then("velocidade_ventilador", "media")
+                .build(),
+        );
         // Regra 3: SE temp quente OR  umid alta   ENTAO rapida
-        motor.add_rule(RuleBuilder::new().when("temperatura","quente").or("umidade","alta").then("velocidade_ventilador","rapida").build());
+        motor.add_rule(
+            RuleBuilder::new()
+                .when("temperatura", "quente")
+                .or("umidade", "alta")
+                .then("velocidade_ventilador", "rapida")
+                .build(),
+        );
         // Regra 4: SE temp fria   AND umid alta   ENTAO media
-        motor.add_rule(RuleBuilder::new().when("temperatura","fria").and("umidade","alta").then("velocidade_ventilador","media").build());
+        motor.add_rule(
+            RuleBuilder::new()
+                .when("temperatura", "fria")
+                .and("umidade", "alta")
+                .then("velocidade_ventilador", "media")
+                .build(),
+        );
 
         motor
     }
@@ -994,8 +1132,11 @@ mod tests {
         m.set_input_unchecked("temperatura", 5.0);
         m.set_input_unchecked("umidade", 10.0);
         let r = m.compute().unwrap();
-        assert!(r["velocidade_ventilador"] < 40.0,
-            "esperava < 40, obteve {:.2}", r["velocidade_ventilador"]);
+        assert!(
+            r["velocidade_ventilador"] < 40.0,
+            "esperava < 40, obteve {:.2}",
+            r["velocidade_ventilador"]
+        );
     }
 
     #[test]
@@ -1018,8 +1159,11 @@ mod tests {
         m.set_input_unchecked("temperatura", 45.0);
         m.set_input_unchecked("umidade", 90.0);
         let r = m.compute().unwrap();
-        assert!(r["velocidade_ventilador"] > 60.0,
-            "esperava > 60, obteve {:.2}", r["velocidade_ventilador"]);
+        assert!(
+            r["velocidade_ventilador"] > 60.0,
+            "esperava > 60, obteve {:.2}",
+            r["velocidade_ventilador"]
+        );
     }
 
     #[test]
@@ -1034,8 +1178,13 @@ mod tests {
             m.set_input_unchecked("temperatura", t);
             m.set_input_unchecked("umidade", umid);
             let v = m.compute().unwrap()["velocidade_ventilador"];
-            assert!(v >= anterior - 0.5,
-                "nao-monotonia: temp={} vel={:.2} < anterior={:.2}", t, v, anterior);
+            assert!(
+                v >= anterior - 0.5,
+                "nao-monotonia: temp={} vel={:.2} < anterior={:.2}",
+                t,
+                v,
+                anterior
+            );
             anterior = v;
         }
     }
@@ -1043,14 +1192,25 @@ mod tests {
     #[test]
     fn ventilador_saida_dentro_do_universo() {
         // A saida sempre deve estar dentro do universo [0, 100]
-        let cenarios = [(5.0,10.0),(25.0,50.0),(45.0,90.0),(0.0,0.0),(50.0,100.0)];
+        let cenarios = [
+            (5.0, 10.0),
+            (25.0, 50.0),
+            (45.0, 90.0),
+            (0.0, 0.0),
+            (50.0, 100.0),
+        ];
         for (t, u) in cenarios {
             let mut m = montar_ventilador();
             m.set_input_unchecked("temperatura", t);
             m.set_input_unchecked("umidade", u);
             let v = m.compute().unwrap()["velocidade_ventilador"];
-            assert!(v >= 0.0 && v <= 100.0,
-                "saida={:.2} fora do universo [0,100] para temp={} umid={}", v, t, u);
+            assert!(
+                v >= 0.0 && v <= 100.0,
+                "saida={:.2} fora do universo [0,100] para temp={} umid={}",
+                v,
+                t,
+                u
+            );
         }
     }
 
@@ -1061,17 +1221,27 @@ mod tests {
         let mut m = MamdaniEngine::new();
 
         let mut temp = FuzzyVariable::new("temperature", Universe::new(0.0, 50.0, 501));
-        temp.add_term(Term::new("cold", MembershipFn::Trimf([0.0,  0.0, 25.0])));
-        temp.add_term(Term::new("hot",  MembershipFn::Trimf([25.0,50.0, 50.0])));
+        temp.add_term(Term::new("cold", MembershipFn::Trimf([0.0, 0.0, 25.0])));
+        temp.add_term(Term::new("hot", MembershipFn::Trimf([25.0, 50.0, 50.0])));
         m.add_antecedent(temp);
 
         let mut speed = FuzzyVariable::new("speed", Universe::new(0.0, 100.0, 1001));
-        speed.add_term(Term::new("slow", MembershipFn::Trimf([0.0,  0.0,  50.0])));
-        speed.add_term(Term::new("fast", MembershipFn::Trimf([50.0,100.0,100.0])));
+        speed.add_term(Term::new("slow", MembershipFn::Trimf([0.0, 0.0, 50.0])));
+        speed.add_term(Term::new("fast", MembershipFn::Trimf([50.0, 100.0, 100.0])));
         m.add_consequent(speed);
 
-        m.add_rule(RuleBuilder::new().when("temperature","cold").then("speed","slow").build());
-        m.add_rule(RuleBuilder::new().when("temperature","hot").then("speed","fast").build());
+        m.add_rule(
+            RuleBuilder::new()
+                .when("temperature", "cold")
+                .then("speed", "slow")
+                .build(),
+        );
+        m.add_rule(
+            RuleBuilder::new()
+                .when("temperature", "hot")
+                .then("speed", "fast")
+                .build(),
+        );
         m
     }
 
@@ -1084,7 +1254,9 @@ mod tests {
         let explain_val = m.explain().unwrap().outputs["speed"];
         assert!(
             (compute_val - explain_val).abs() < 1e-10,
-            "compute={:.6} != explain={:.6}", compute_val, explain_val
+            "compute={:.6} != explain={:.6}",
+            compute_val,
+            explain_val
         );
     }
 
@@ -1117,7 +1289,10 @@ mod tests {
                 for (term, degree) in &fv.term_degrees {
                     assert!(
                         *degree >= 0.0 && *degree <= 1.0,
-                        "grau fora de [0,1]: input={} term={} degree={}", input, term, degree
+                        "grau fora de [0,1]: input={} term={} degree={}",
+                        input,
+                        term,
+                        degree
                     );
                 }
             }
@@ -1132,9 +1307,12 @@ mod tests {
         let report = m.explain().unwrap();
         for rf in &report.rule_firings {
             assert_eq!(
-                rf.fired, rf.firing_degree > 0.0,
+                rf.fired,
+                rf.firing_degree > 0.0,
                 "inconsistencia: fired={} mas firing_degree={:.4} para regra: {}",
-                rf.fired, rf.firing_degree, rf.rule_text
+                rf.fired,
+                rf.firing_degree,
+                rf.rule_text
             );
         }
     }
@@ -1149,7 +1327,9 @@ mod tests {
             report.rules_fired + report.rules_skipped,
             report.rule_firings.len(),
             "rules_fired({}) + rules_skipped({}) != total({})",
-            report.rules_fired, report.rules_skipped, report.rule_firings.len()
+            report.rules_fired,
+            report.rules_skipped,
+            report.rule_firings.len()
         );
     }
 
@@ -1160,16 +1340,24 @@ mod tests {
         m.set_input_unchecked("temperature", 5.0);
         let report = m.explain().unwrap();
 
-        let cold_rule = report.rule_firings.iter()
+        let cold_rule = report
+            .rule_firings
+            .iter()
             .find(|r| r.consequent_term == "slow")
             .expect("regra cold→slow nao encontrada");
-        let hot_rule = report.rule_firings.iter()
+        let hot_rule = report
+            .rule_firings
+            .iter()
             .find(|r| r.consequent_term == "fast")
             .expect("regra hot→fast nao encontrada");
 
-        assert!(cold_rule.fired,   "cold→slow deveria ter disparado");
-        assert!(!hot_rule.fired,   "hot→fast nao deveria ter disparado");
-        assert!(cold_rule.firing_degree > 0.5, "grau cold esperado > 0.5, obteve {:.4}", cold_rule.firing_degree);
+        assert!(cold_rule.fired, "cold→slow deveria ter disparado");
+        assert!(!hot_rule.fired, "hot→fast nao deveria ter disparado");
+        assert!(
+            cold_rule.firing_degree > 0.5,
+            "grau cold esperado > 0.5, obteve {:.4}",
+            cold_rule.firing_degree
+        );
         assert_eq!(hot_rule.firing_degree, 0.0);
     }
 
@@ -1180,14 +1368,23 @@ mod tests {
         m.set_input_unchecked("temperature", 12.5);
         let report = m.explain().unwrap();
 
-        let cold_fv = report.fuzzification.iter()
+        let cold_fv = report
+            .fuzzification
+            .iter()
             .find(|fv| fv.variable == "temperature")
             .unwrap();
-        let cold_degree = cold_fv.term_degrees.iter()
-            .find(|(t, _)| t == "cold").map(|(_, d)| *d).unwrap();
+        let cold_degree = cold_fv
+            .term_degrees
+            .iter()
+            .find(|(t, _)| t == "cold")
+            .map(|(_, d)| *d)
+            .unwrap();
 
-        assert!((cold_degree - 0.5).abs() < 1e-6,
-            "grau cold em 12.5 esperado=0.5, obteve={:.6}", cold_degree);
+        assert!(
+            (cold_degree - 0.5).abs() < 1e-6,
+            "grau cold em 12.5 esperado=0.5, obteve={:.6}",
+            cold_degree
+        );
     }
 
     #[test]
@@ -1197,12 +1394,18 @@ mod tests {
         m.set_input_unchecked("temperature", 5.0);
         let report = m.explain().unwrap();
 
-        let temp_fv = report.fuzzification.iter()
+        let temp_fv = report
+            .fuzzification
+            .iter()
             .find(|fv| fv.variable == "temperature")
             .unwrap();
 
-        assert_eq!(temp_fv.dominant_term(), Some("cold"),
-            "dominant_term esperado 'cold', obteve '{:?}'", temp_fv.dominant_term());
+        assert_eq!(
+            temp_fv.dominant_term(),
+            Some("cold"),
+            "dominant_term esperado 'cold', obteve '{:?}'",
+            temp_fv.dominant_term()
+        );
     }
 
     #[test]
@@ -1212,12 +1415,18 @@ mod tests {
         m.set_input_unchecked("temperature", 45.0);
         let report = m.explain().unwrap();
 
-        let temp_fv = report.fuzzification.iter()
+        let temp_fv = report
+            .fuzzification
+            .iter()
             .find(|fv| fv.variable == "temperature")
             .unwrap();
 
-        assert_eq!(temp_fv.dominant_term(), Some("hot"),
-            "dominant_term esperado 'hot', obteve '{:?}'", temp_fv.dominant_term());
+        assert_eq!(
+            temp_fv.dominant_term(),
+            Some("hot"),
+            "dominant_term esperado 'hot', obteve '{:?}'",
+            temp_fv.dominant_term()
+        );
     }
 
     #[test]
@@ -1228,11 +1437,17 @@ mod tests {
         let report = m.explain().unwrap();
         let s = report.summary();
 
-        assert!(s.contains("Fuzzification"),    "faltou secao Fuzzification");
-        assert!(s.contains("Rule Evaluation"),   "faltou secao Rule Evaluation");
-        assert!(s.contains("Defuzzification"),   "faltou secao Defuzzification");
-        assert!(s.contains("temperature"),       "faltou nome da variavel");
-        assert!(s.contains("speed"),             "faltou nome da saida");
+        assert!(s.contains("Fuzzification"), "faltou secao Fuzzification");
+        assert!(
+            s.contains("Rule Evaluation"),
+            "faltou secao Rule Evaluation"
+        );
+        assert!(
+            s.contains("Defuzzification"),
+            "faltou secao Defuzzification"
+        );
+        assert!(s.contains("temperature"), "faltou nome da variavel");
+        assert!(s.contains("speed"), "faltou nome da saida");
     }
 
     #[test]
@@ -1243,14 +1458,25 @@ mod tests {
         m.set_input_unchecked("umidade", 10.0);
 
         let compute_val = m.compute().unwrap()["velocidade_ventilador"];
-        let report      = m.explain().unwrap();
+        let report = m.explain().unwrap();
         let explain_val = report.outputs["velocidade_ventilador"];
 
-        assert!((compute_val - explain_val).abs() < 1e-10,
-            "divergencia compute/explain: {:.6} vs {:.6}", compute_val, explain_val);
-        assert_eq!(report.fuzzification.len(), 2, "esperava 2 variaveis fuzzificadas");
-        assert_eq!(report.rule_firings.len(),  4, "esperava 4 entradas de regras");
+        assert!(
+            (compute_val - explain_val).abs() < 1e-10,
+            "divergencia compute/explain: {:.6} vs {:.6}",
+            compute_val,
+            explain_val
+        );
+        assert_eq!(
+            report.fuzzification.len(),
+            2,
+            "esperava 2 variaveis fuzzificadas"
+        );
+        assert_eq!(
+            report.rule_firings.len(),
+            4,
+            "esperava 4 entradas de regras"
+        );
         assert!(report.rules_fired + report.rules_skipped == 4);
     }
 }
-
