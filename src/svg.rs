@@ -274,8 +274,9 @@ fn draw_intersection(
     // Dot at intersection
     circle(s, xp, yp, 4.5, color);
 
-    // Annotation label
-    let lw = label.len() as f64 * 6.8 + 10.0;
+    // Annotation label – use chars().count() to get the true character width
+    let char_count = label.chars().count();
+    let lw = char_count as f64 * 6.8 + 10.0;
     let lx = if xp + lw + 6.0 > ML + PW {
         xp - lw - 6.0
     } else {
@@ -285,7 +286,6 @@ fn draw_intersection(
     rect(s, lx, ly, lw, 14.0, 3.0, BG, 0.90);
     text(s, lx + lw / 2.0, ly + 10.0, "middle", color, 9, true, label);
 }
-
 // ─── Main render: membership function SVG ────────────────────────
 
 /// Generates a self-contained SVG string for a `FuzzyVariable`.

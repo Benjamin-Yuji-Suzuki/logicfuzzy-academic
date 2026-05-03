@@ -12,5 +12,5 @@ pub use engine::MamdaniEngine;
 pub use error::FuzzyError;
 pub use explain::{CogTable, ExplainReport, FuzzifiedVariable, RuleFiring};
 pub use membership::{gaussmf, interp_membership, trapmf, trimf, MembershipFn};
-pub use rule::{Antecedent, Connector, Rule, RuleBuilder};
+pub use rule::{Antecedent, Connector, Expression, Rule, RuleBuilder};
 pub use variable::{AntecedentVar, ConsequentVar, FuzzyVariable, Term, Universe};

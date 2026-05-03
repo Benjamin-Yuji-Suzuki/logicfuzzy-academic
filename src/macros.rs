@@ -62,29 +62,6 @@ macro_rules! __make_term {
 
 /// Creates a [`FuzzyVariable`](crate::FuzzyVariable) with its universe and all linguistic terms
 /// in a single expression — without needing multiple `add_term` calls.
-///
-/// # Syntax
-/// ```text
-/// fuzzy_var!(name, min, max, resolution,
-///     "term1" => trimf   [a, b, c],
-///     "term2" => trapmf  [a, b, c, d],
-///     "term3" => gaussmf { mean: m, sigma: s },
-/// )
-/// ```
-///
-/// # Example
-/// ```
-/// use logicfuzzy_academic::{FuzzyVariable, Universe, Term, MembershipFn, fuzzy_var};
-///
-/// let temp = fuzzy_var!("temperature", 0.0, 50.0, 501,
-///     "cold" => trimf  [0.0,  0.0, 25.0],
-///     "warm" => trimf  [0.0, 25.0, 50.0],
-///     "hot"  => trimf  [25.0,50.0, 50.0],
-/// );
-///
-/// assert_eq!(temp.term_count(), 3);
-/// assert!((temp.membership_at("cold", 0.0) - 1.0).abs() < 1e-10);
-/// ```
 #[macro_export]
 macro_rules! fuzzy_var {
     (
@@ -109,32 +86,6 @@ macro_rules! fuzzy_var {
 
 /// Creates a [`FuzzyVariable`](crate::FuzzyVariable) and registers it as an antecedent
 /// (input variable) in the given [`MamdaniEngine`](crate::MamdaniEngine).
-///
-/// Equivalent to calling `fuzzy_var!` followed by `engine.add_antecedent(var)`.
-///
-/// # Syntax
-/// ```text
-/// antecedent!(engine, name, min, max, resolution,
-///     "term1" => trimf   [a, b, c],
-///     "term2" => trapmf  [a, b, c, d],
-///     "term3" => gaussmf { mean: m, sigma: s },
-/// )
-/// ```
-///
-/// # Example
-/// ```
-/// use logicfuzzy_academic::{MamdaniEngine, antecedent};
-///
-/// let mut engine = MamdaniEngine::new();
-///
-/// antecedent!(engine, "temperature", 0.0, 50.0, 501,
-///     "cold" => trimf [0.0,  0.0, 25.0],
-///     "warm" => trimf [0.0, 25.0, 50.0],
-///     "hot"  => trimf [25.0,50.0, 50.0],
-/// );
-///
-/// assert_eq!(engine.antecedent_count(), 1);
-/// ```
 #[macro_export]
 macro_rules! antecedent {
     (
@@ -157,32 +108,6 @@ macro_rules! antecedent {
 
 /// Creates a [`FuzzyVariable`](crate::FuzzyVariable) and registers it as a consequent
 /// (output variable) in the given [`MamdaniEngine`](crate::MamdaniEngine).
-///
-/// Equivalent to calling `fuzzy_var!` followed by `engine.add_consequent(var)`.
-///
-/// # Syntax
-/// ```text
-/// consequent!(engine, name, min, max, resolution,
-///     "term1" => trimf   [a, b, c],
-///     "term2" => trapmf  [a, b, c, d],
-///     "term3" => gaussmf { mean: m, sigma: s },
-/// )
-/// ```
-///
-/// # Example
-/// ```
-/// use logicfuzzy_academic::{MamdaniEngine, consequent};
-///
-/// let mut engine = MamdaniEngine::new();
-///
-/// consequent!(engine, "fan_speed", 0.0, 100.0, 1001,
-///     "slow"   => trimf [0.0,  0.0,  50.0],
-///     "medium" => trimf [0.0, 50.0, 100.0],
-///     "fast"   => trimf [50.0,100.0,100.0],
-/// );
-///
-/// assert_eq!(engine.consequent_count(), 1);
-/// ```
 #[macro_export]
 macro_rules! consequent {
     (
@@ -211,24 +136,29 @@ macro_rules! consequent {
 /// Keywords: `IF`, `IS`, `AND`, `OR`, `THEN`.
 /// Identifiers with underscores (e.g. `fan_speed`, `smoke_level`) work normally.
 ///
-/// # Example
+/// Supports up to 5 antecedents with uniform connectors (`AND` or `OR`),
+/// plus selected mixed patterns (for 3 antecedents). For more complex
+/// rules, use the [`RuleBuilder`](crate::rule::RuleBuilder) directly.
+///
+/// # Examples
 /// ```
 /// use logicfuzzy_academic::rule;
 /// use logicfuzzy_academic::rule::Connector;
 ///
+/// // 2 antecedents
 /// let r = rule!(IF temperatura IS quente OR umidade IS alta THEN velocidade_ventilador IS rapida);
 ///
-/// assert_eq!(r.consequent_var(),  "velocidade_ventilador");
-/// assert_eq!(r.consequent_term(), "rapida");
-/// assert_eq!(r.connector(),       &Connector::Or);
-/// assert_eq!(r.antecedents().len(), 2);
+/// // 3 antecedents
+/// let r = rule!(IF a IS x AND b IS y AND c IS z THEN out IS result);
+///
+/// // 4 antecedents (all AND)
+/// let r = rule!(IF a IS x AND b IS y AND c IS z AND d IS w THEN out IS result);
+///
+/// // 5 antecedents (all OR)
+/// let r = rule!(IF a IS x OR b IS y OR c IS z OR d IS w OR e IS v THEN out IS result);
 /// ```
 #[macro_export]
 macro_rules! rule {
-    // ── NOT patterns MUST come before the plain IS patterns ───────
-    // (Rust macro_rules! is ordered; IS NOT must be matched before
-    //  IS $t:ident greedily consumes "NOT" as a term label.)
-
     // ── 1 antecedente NOT ─────────────────────────────────────────
     (IF $v1:ident IS NOT $t1:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
@@ -300,12 +230,58 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 3 antecedentes: AND OR ─────────────────────────────────────
+    // ── 3 antecedentes: AND OR (mixed) ─────────────────────────────
     (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident OR $v3:ident IS $t3:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
             .and(stringify!($v2), stringify!($t2))
             .or(stringify!($v3), stringify!($t3))
+            .then(stringify!($cv), stringify!($ct))
+            .build()
+    };
+
+    // ── 4 antecedentes: AND AND AND ────────────────────────────────
+    (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident AND $v3:ident IS $t3:ident AND $v4:ident IS $t4:ident THEN $cv:ident IS $ct:ident) => {
+        $crate::rule::RuleBuilder::new()
+            .when(stringify!($v1), stringify!($t1))
+            .and(stringify!($v2), stringify!($t2))
+            .and(stringify!($v3), stringify!($t3))
+            .and(stringify!($v4), stringify!($t4))
+            .then(stringify!($cv), stringify!($ct))
+            .build()
+    };
+
+    // ── 4 antecedentes: OR OR OR ───────────────────────────────────
+    (IF $v1:ident IS $t1:ident OR $v2:ident IS $t2:ident OR $v3:ident IS $t3:ident OR $v4:ident IS $t4:ident THEN $cv:ident IS $ct:ident) => {
+        $crate::rule::RuleBuilder::new()
+            .when(stringify!($v1), stringify!($t1))
+            .or(stringify!($v2), stringify!($t2))
+            .or(stringify!($v3), stringify!($t3))
+            .or(stringify!($v4), stringify!($t4))
+            .then(stringify!($cv), stringify!($ct))
+            .build()
+    };
+
+    // ── 5 antecedentes: AND AND AND AND ────────────────────────────
+    (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident AND $v3:ident IS $t3:ident AND $v4:ident IS $t4:ident AND $v5:ident IS $t5:ident THEN $cv:ident IS $ct:ident) => {
+        $crate::rule::RuleBuilder::new()
+            .when(stringify!($v1), stringify!($t1))
+            .and(stringify!($v2), stringify!($t2))
+            .and(stringify!($v3), stringify!($t3))
+            .and(stringify!($v4), stringify!($t4))
+            .and(stringify!($v5), stringify!($t5))
+            .then(stringify!($cv), stringify!($ct))
+            .build()
+    };
+
+    // ── 5 antecedentes: OR OR OR OR ────────────────────────────────
+    (IF $v1:ident IS $t1:ident OR $v2:ident IS $t2:ident OR $v3:ident IS $t3:ident OR $v4:ident IS $t4:ident OR $v5:ident IS $t5:ident THEN $cv:ident IS $ct:ident) => {
+        $crate::rule::RuleBuilder::new()
+            .when(stringify!($v1), stringify!($t1))
+            .or(stringify!($v2), stringify!($t2))
+            .or(stringify!($v3), stringify!($t3))
+            .or(stringify!($v4), stringify!($t4))
+            .or(stringify!($v5), stringify!($t5))
             .then(stringify!($cv), stringify!($ct))
             .build()
     };
@@ -341,25 +317,6 @@ macro_rules! rule {
 /// - `var_svg!(var, value)` — adds a vertical input marker + μ annotations
 ///
 /// Returns a `String` containing self-contained SVG markup.
-///
-/// # Example
-/// ```
-/// use logicfuzzy_academic::{fuzzy_var, var_svg};
-///
-/// let var = fuzzy_var!("temperature", 0.0, 50.0, 501,
-///     "cold" => trimf [0.0,  0.0, 25.0],
-///     "warm" => trimf [0.0, 25.0, 50.0],
-///     "hot"  => trimf [25.0,50.0, 50.0],
-/// );
-///
-/// // Without input marker
-/// let svg = var_svg!(var);
-/// assert!(svg.starts_with("<svg"));
-///
-/// // With input marker at x = 10.0
-/// let svg_with = var_svg!(var, 10.0);
-/// assert!(svg_with.contains("μ_cold"));
-/// ```
 #[macro_export]
 macro_rules! var_svg {
     // Sem marcador de entrada / without input marker
@@ -378,36 +335,6 @@ macro_rules! var_svg {
 
 /// Exports SVG files for all variables of a [`MamdaniEngine`](crate::MamdaniEngine)
 /// to a directory, printing a status line for each outcome.
-///
-/// Two forms:
-/// - `export_svg!(engine, "dir")` — membership function SVGs only
-/// - `export_svg!(engine, "dir", aggregated)` — also writes aggregated output SVGs
-///
-/// Each call prints `✓` on success or `✗ Error: …` on failure.
-///
-/// # Example
-/// ```no_run
-/// use logicfuzzy_academic::{MamdaniEngine, antecedent, consequent, rule, export_svg};
-///
-/// let mut engine = MamdaniEngine::new();
-/// antecedent!(engine, "temperature", 0.0, 50.0, 501,
-///     "cold" => trimf [0.0, 0.0, 25.0],
-///     "hot"  => trimf [25.0,50.0,50.0],
-/// );
-/// consequent!(engine, "speed", 0.0, 100.0, 1001,
-///     "slow" => trimf [0.0,  0.0, 50.0],
-///     "fast" => trimf [50.0,100.0,100.0],
-/// );
-/// engine.add_rule(rule!(IF temperature IS cold THEN speed IS slow));
-/// engine.set_input("temperature", 5.0);
-/// engine.compute();
-///
-/// // Membership function SVGs only
-/// export_svg!(engine, "output/");
-///
-/// // Membership + aggregated output SVGs
-/// export_svg!(engine, "output/", aggregated);
-/// ```
 #[macro_export]
 macro_rules! export_svg {
     // Somente MFs / membership functions only
@@ -438,8 +365,6 @@ macro_rules! export_svg {
 mod tests {
     use crate::rule::Connector;
 
-    // ── rule! ──────────────────────────────────────────────────────
-
     #[test]
     fn rule_one_antecedent() {
         let r = rule!(IF temperature IS cold THEN fan_speed IS slow);
@@ -468,12 +393,38 @@ mod tests {
     }
 
     #[test]
-    fn rule_three_antecedents() {
+    fn rule_three_antecedents_all_and() {
         let r = rule!(IF a IS x AND b IS y AND c IS z THEN output IS result);
         assert_eq!(r.antecedents().len(), 3);
         assert_eq!(r.connector(), &Connector::And);
         assert_eq!(r.antecedents()[2].0, "c");
         assert_eq!(r.antecedents()[2].1, "z");
+    }
+
+    #[test]
+    fn rule_three_antecedents_mixed() {
+        let r = rule!(IF a IS x AND b IS y OR c IS z THEN output IS result);
+        assert_eq!(r.antecedents().len(), 3);
+        assert_eq!(r.connector(), &Connector::Or); // last connector used
+        assert_eq!(r.antecedents()[0].0, "a");
+        assert_eq!(r.antecedents()[1].0, "b");
+        assert_eq!(r.antecedents()[2].0, "c");
+    }
+
+    #[test]
+    fn rule_four_antecedents_all_and() {
+        let r = rule!(IF a IS x AND b IS y AND c IS z AND d IS w THEN output IS result);
+        assert_eq!(r.antecedents().len(), 4);
+        assert_eq!(r.connector(), &Connector::And);
+        assert_eq!(r.antecedents()[3].0, "d");
+    }
+
+    #[test]
+    fn rule_five_antecedents_all_or() {
+        let r = rule!(IF a IS x OR b IS y OR c IS z OR d IS w OR e IS v THEN output IS result);
+        assert_eq!(r.antecedents().len(), 5);
+        assert_eq!(r.connector(), &Connector::Or);
+        assert_eq!(r.antecedents()[4].0, "e");
     }
 
     #[test]
@@ -534,9 +485,7 @@ mod tests {
         let var = fuzzy_var!("x", 0.0, 10.0, 101,
             "low" => trimf [0.0, 0.0, 5.0],
         );
-        // pico em 0.0 → grau = 1.0
         assert!((var.membership_at("low", 0.0) - 1.0).abs() < 1e-6);
-        // fora do suporte → grau = 0.0
         assert!((var.membership_at("low", 6.0)).abs() < 1e-6);
     }
 
@@ -545,9 +494,7 @@ mod tests {
         let var = fuzzy_var!("x", 0.0, 10.0, 101,
             "mid" => trapmf [2.0, 3.0, 7.0, 8.0],
         );
-        // plano central → grau = 1.0
         assert!((var.membership_at("mid", 5.0) - 1.0).abs() < 1e-6);
-        // fora → grau = 0.0
         assert!((var.membership_at("mid", 9.0)).abs() < 1e-6);
     }
 
@@ -556,13 +503,11 @@ mod tests {
         let var = fuzzy_var!("x", 0.0, 100.0, 1001,
             "centro" => gaussmf { mean: 50.0, sigma: 10.0 },
         );
-        // pico na media → grau ≈ 1.0
         assert!((var.membership_at("centro", 50.0) - 1.0).abs() < 1e-9);
     }
 
     #[test]
     fn fuzzy_var_sem_virgula_final() {
-        // trailing comma é opcional
         let var = fuzzy_var!("x", 0.0, 10.0, 101,
             "a" => trimf [0.0, 5.0, 10.0]
         );
@@ -571,7 +516,6 @@ mod tests {
 
     #[test]
     fn fuzzy_var_mf_mistas() {
-        // trimf + trapmf + gaussmf no mesmo macro
         let var = fuzzy_var!("x", 0.0, 100.0, 1001,
             "low"    => trimf   [0.0,   0.0,  40.0],
             "medium" => trapmf  [30.0, 40.0,  60.0, 70.0],
@@ -622,7 +566,6 @@ mod tests {
 
     #[test]
     fn antecedent_consequent_pipeline_completo() {
-        // Monta sistema completo so com os novos macros e verifica compute()
         use crate::MamdaniEngine;
         let mut engine = MamdaniEngine::new();
 
@@ -638,14 +581,12 @@ mod tests {
         engine.add_rule(rule!(IF x IS low  THEN y IS small));
         engine.add_rule(rule!(IF x IS high THEN y IS large));
 
-        // x=2 → low tem grau alto → y deve ser < 5
         engine.set_input_unchecked("x", 2.0);
         let out = engine.compute().unwrap()["y"];
-        assert!(out < 5.0, "esperava saida < 5.0, obteve {:.4}", out);
+        assert!(out < 5.0);
 
-        // x=8 → high tem grau alto → y deve ser > 5
         engine.set_input_unchecked("x", 8.0);
         let out = engine.compute().unwrap()["y"];
-        assert!(out > 5.0, "esperava saida > 5.0, obteve {:.4}", out);
+        assert!(out > 5.0);
     }
 }

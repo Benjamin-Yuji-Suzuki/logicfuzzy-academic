@@ -29,29 +29,28 @@ export_svg!(engine, "output/", aggregated);
 
 - **Complete Mamdani pipeline** — fuzzification → inference → aggregation → defuzzification
 - **Membership functions** — `trimf`, `trapmf`, `gaussmf`, including open shoulders
-- **`rule!` macro** — declarative DSL: `IF x IS NOT cold AND y IS high THEN z IS fast`
+- **`rule!` macro** — declarative DSL: `IF x IS NOT cold AND y IS high THEN z IS fast` (up to 5 antecedents)
 - **`fuzzy_var!` / `antecedent!` / `consequent!` macros** — build variables in one block
 - **`var_svg!` / `export_svg!` macros** — SVG export in one call
 - **`RuleBuilder`** — fluent API with `when_not()`, `and_not()`, `also()`, `weight()`
+- **`Expression` AST** — arbitrary nested `AND`/`OR` trees via `Rule::from_expression()` and `RuleBuilder::when_expr()`
 - **AND / OR / NOT connectors** — min (t-norm), max (s-norm), complement
 - **Rule weights** — `rule.with_weight(0.8)` scales firing degree
 - **Multiple consequents** — `THEN fan IS fast AND light IS bright`
 - **`DefuzzMethod`** — `Centroid`, `Bisector`, `MeanOfMaximum`, `SmallestOfMaximum`, `LargestOfMaximum`
-- **`FuzzyError`** — `Result`-based errors: `MissingInput`, `InputOutOfRange`, `NoRulesFired`
+- **`FuzzyError`** — `Result`-based errors: `MissingInput`, `InputOutOfRange`, `NoRulesFired`, `DuplicateVariable`
+- **`try_add_antecedent()` / `try_add_consequent()`** — fallible registration returning `Result`
+- **`validate_rules()`** — checks all rule variables and terms exist before running inference
 - **`explain()`** — full pipeline report with fuzzification degrees and rule firing strengths
 - **`discrete_cog()`** — step-by-step Centre-of-Gravity table
 - **SVG visualization** — colour legend, μ annotations, clipped activation areas, aggregated output
+- **`MamdaniEngine: Clone`** — clone the engine to run multiple scenarios without rebuilding
 - **Zero fuzzy dependencies** — only Rust `std`
-- **169 tests** — unit tests + doctests covering the full pipeline
+- **232 tests** — unit tests + doctests covering the full pipeline
 
 ---
 
 ## Quick start
-
-```toml
-[dependencies]
-logicfuzzy_academic = "0.1"
-```
 
 ```rust
 use logicfuzzy_academic::{MamdaniEngine, antecedent, consequent, rule, export_svg};
@@ -120,6 +119,9 @@ antecedent!(engine, "humidity", 0.0, 100.0, 1001,
 rule!(IF temperature IS hot AND humidity IS high THEN fan_speed IS fast)
 rule!(IF temperature IS NOT cold OR humidity IS high THEN fan_speed IS fast)
 
+// Up to 5 antecedents
+rule!(IF a IS x AND b IS y AND c IS z AND d IS w AND e IS v THEN out IS result)
+
 // Multiple consequents
 rule!(IF temperature IS hot THEN fan_speed IS fast AND light IS bright)
 
@@ -136,6 +138,31 @@ RuleBuilder::new()
     .then("fan_speed", "fast")
     .also("light", "bright")
     .weight(0.9)
+    .build()
+```
+
+### `Expression` AST — arbitrary nested logic
+
+For rules more complex than the `rule!` macro supports, build an expression tree directly:
+
+```rust
+use logicfuzzy_academic::{Expression, Antecedent, Rule};
+
+let expr = Expression::and(vec![
+    Expression::term(Antecedent::new("temperature", "hot")),
+    Expression::or(vec![
+        Expression::term(Antecedent::new("humidity", "high")),
+        Expression::term(Antecedent::negated("pressure", "low")),
+    ]),
+]);
+
+let rule = Rule::from_expression(expr, vec![("fan_speed".into(), "fast".into())]);
+engine.add_rule(rule);
+
+// Or via RuleBuilder
+RuleBuilder::new()
+    .when_expr(expr)
+    .then("fan_speed", "fast")
     .build()
 ```
 
@@ -184,11 +211,40 @@ match engine.set_input("temperature", 999.0) {
     Err(_) => {}
 }
 
-// compute() returns Err(NoRulesFired) when all firing degrees are zero
+// compute() returns Err(NoRulesFired { .. }) when all firing degrees are zero
 match engine.compute() {
     Ok(outputs) => println!("fan_speed = {:.2}", outputs["fan_speed"]),
-    Err(FuzzyError::NoRulesFired) => eprintln!("no rule fired — check inputs"),
+    Err(FuzzyError::NoRulesFired { .. }) => eprintln!("no rule fired — check inputs"),
     Err(e) => eprintln!("error: {e}"),
+}
+```
+
+### Fallible registration and rule validation
+
+```rust
+// try_add_antecedent / try_add_consequent return Err(DuplicateVariable) instead of panicking
+engine.try_add_antecedent(var)?;
+engine.try_add_consequent(out_var)?;
+
+// validate_rules checks all variable and term names before running inference
+if let Err(errors) = engine.validate_rules() {
+    for e in errors {
+        eprintln!("rule error: {e}");
+    }
+}
+```
+
+### Cloning the engine
+
+```rust
+// MamdaniEngine derives Clone — useful for running multiple scenarios
+let base = engine.clone();
+
+for value in [10.0, 30.0, 50.0] {
+    let mut e = base.clone();
+    e.set_input("temperature", value).unwrap();
+    let out = e.compute().unwrap();
+    println!("temp={value} → fan={:.2}", out["fan_speed"]);
 }
 ```
 
@@ -261,11 +317,12 @@ engine.export_aggregated_svg("output/").unwrap();
 
 ```
 src/
-├── error.rs      — FuzzyError (MissingInput, InputOutOfRange, NoRulesFired)
+├── error.rs      — FuzzyError (MissingInput, InputOutOfRange, NoRulesFired, DuplicateVariable)
 ├── membership.rs — trimf, trapmf, gaussmf, MembershipFn
 ├── variable.rs   — Universe, Term, FuzzyVariable, Universe::with_resolution()
-├── rule.rs       — Antecedent (with NOT), Rule, RuleBuilder, Connector
-├── engine.rs     — MamdaniEngine — full pipeline, DefuzzMethod, discrete_cog()
+├── rule.rs       — Antecedent (with NOT), Expression, Rule, RuleBuilder, Connector
+├── engine.rs     — MamdaniEngine (Clone) — full pipeline, DefuzzMethod, discrete_cog(),
+│                   try_add_antecedent(), try_add_consequent(), validate_rules()
 ├── explain.rs    — ExplainReport, RuleFiring, FuzzifiedVariable, CogTable
 ├── svg.rs        — pure-Rust SVG renderer (zero dependencies)
 ├── macros.rs     — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!
@@ -292,7 +349,7 @@ crisp inputs  →  fuzzification  →  inference (AND=min, OR=max, NOT=1-μ)
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
 cargo run --example demo   # two systems + SVG export to output/
-cargo test                 # 169 tests (unit + doctests)
+cargo test                 # 232 tests (unit + doctests)
 ```
 
 ---

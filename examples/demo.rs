@@ -6,7 +6,7 @@
 //!   1. **Tip Control**        — food quality + service → tip percentage
 //!   2. **Irrigation Control** — soil moisture + temperature → valve opening
 //!
-//! Run: `cargo run`  →  SVGs written to `output/gorjeta/` and `output/irrigacao/`
+//! Run: `cargo run --example demo`  →  SVGs written to `output/gorjeta/` and `output/irrigacao/`
 
 use logicfuzzy_academic::{
     antecedent, consequent, export_svg, fuzzy_var, rule, var_svg, MamdaniEngine,
@@ -191,10 +191,11 @@ fn sistema_gorjeta() {
     for (desc, q, sv) in scenarios {
         engine.set_input_unchecked("food_quality", *q);
         engine.set_input_unchecked("service", *sv);
-        let tip = engine.compute().expect("compute failed")["$1"];
-        let cls = if tip < 8.0 {
+        let result = engine.compute().expect("compute failed");
+        let tip_value = result["tip"];
+        let cls = if tip_value < 8.0 {
             "LOW"
-        } else if tip < 16.0 {
+        } else if tip_value < 16.0 {
             "MEDIUM"
         } else {
             "HIGH"
@@ -203,22 +204,19 @@ fn sistema_gorjeta() {
             desc.to_string(),
             format!("{:.1}", q),
             format!("{:.1}", sv),
-            format!("{:.4}%", tip),
+            format!("{:.4}%", tip_value),
             cls.to_string(),
         ]);
     }
     t.print();
 
     section("SVG export — all methods");
-
-    // Method 1: export_svg! — all variables at once + aggregated
     engine.set_input_unchecked("food_quality", 6.5);
     engine.set_input_unchecked("service", 5.0);
     let _ = engine.compute();
     println!("  [1] export_svg!(engine, dir, aggregated)");
     export_svg!(engine, "output/gorjeta", aggregated);
 
-    // Method 2: var_svg! without input marker
     println!("\n  [2] var_svg!(var)  — clean MF plot");
     let tip_var = fuzzy_var!("tip", 0.0, 25.0, 1001,
         "low"    => trimf [ 0.0,  0.0, 10.0],
@@ -228,7 +226,6 @@ fn sistema_gorjeta() {
     std::fs::write("output/gorjeta/tip_clean.svg", var_svg!(tip_var)).ok();
     println!("  ✓  output/gorjeta/tip_clean.svg");
 
-    // Method 3: var_svg! with input — one SVG per scenario
     println!("\n  [3] var_svg!(var, value)  — per-scenario quality plots");
     let quality_var = fuzzy_var!("food_quality", 0.0, 10.0, 1001,
         "poor"      => trimf [0.0,  0.0,  5.0],
@@ -283,16 +280,18 @@ fn sistema_irrigacao() {
         "high"   => trapmf [60.0, 80.0,100.0,100.0],
     );
 
-    // R1: low moisture  AND hot  → high  valve
-    // R2: low moisture  AND warm → medium valve
-    // R3: med moisture  AND hot  → medium valve
-    // R4: med moisture  AND warm → low   valve
-    // R5: high moisture OR  cold → low   valve
-    engine.add_rule(rule!(IF moisture IS low    AND temperature IS hot  THEN valve IS high));
-    engine.add_rule(rule!(IF moisture IS low    AND temperature IS warm THEN valve IS medium));
-    engine.add_rule(rule!(IF moisture IS medium AND temperature IS hot  THEN valve IS medium));
-    engine.add_rule(rule!(IF moisture IS medium AND temperature IS warm THEN valve IS low));
-    engine.add_rule(rule!(IF moisture IS high    OR temperature IS cold THEN valve IS low));
+    // Keep rules in a slice so we can inspect their connectors later
+    let rules = [
+        rule!(IF moisture IS low    AND temperature IS hot  THEN valve IS high),
+        rule!(IF moisture IS low    AND temperature IS warm THEN valve IS medium),
+        rule!(IF moisture IS medium AND temperature IS hot  THEN valve IS medium),
+        rule!(IF moisture IS medium AND temperature IS warm THEN valve IS low),
+        rule!(IF moisture IS high    OR temperature IS cold THEN valve IS low),
+    ];
+
+    for r in &rules {
+        engine.add_rule(r.clone());
+    }
 
     section("System summary");
     engine.print_summary();
@@ -327,17 +326,21 @@ fn sistema_irrigacao() {
         tf.print();
 
         println!();
-        let ops = ["min/AND", "min/AND", "min/AND", "min/AND", "max/OR"];
         let mut tr = Table::new(&[
             ("Rule", 5, false),
-            ("Op", 10, false),
+            ("Connector", 10, false),
             ("alpha", 12, true),
             ("Fired", 5, false),
         ]);
         for (i, rf) in report.rule_firings.iter().enumerate() {
+            let connector = rules[i].connector();
+            let op_str = match connector {
+                logicfuzzy_academic::rule::Connector::And => "AND (min)",
+                logicfuzzy_academic::rule::Connector::Or => "OR (max)",
+            };
             tr.push(vec![
                 format!("R{}", i + 1),
-                ops[i].to_string(),
+                op_str.to_string(),
                 format!("{:.6}", rf.firing_degree),
                 if rf.fired { "yes" } else { "no" }.to_string(),
             ]);
@@ -381,10 +384,11 @@ fn sistema_irrigacao() {
     for (desc, moist, temp) in scenarios {
         engine.set_input_unchecked("moisture", *moist);
         engine.set_input_unchecked("temperature", *temp);
-        let v = engine.compute().expect("compute failed")["$1"];
-        let cls = if v < 33.0 {
+        let result = engine.compute().expect("compute failed");
+        let valve_value = result["valve"];
+        let cls = if valve_value < 33.0 {
             "LOW"
-        } else if v < 66.0 {
+        } else if valve_value < 66.0 {
             "MEDIUM"
         } else {
             "HIGH"
@@ -393,7 +397,7 @@ fn sistema_irrigacao() {
             desc.to_string(),
             format!("{:.1}", moist),
             format!("{:.1}", temp),
-            format!("{:.4}%", v),
+            format!("{:.4}%", valve_value),
             cls.to_string(),
         ]);
     }
@@ -401,14 +405,13 @@ fn sistema_irrigacao() {
 
     section("SVG export — all methods");
 
-    // Method 1: export_svg! macro
+    // Set the main scenario inputs again for SVG export
     engine.set_input_unchecked("moisture", 38.0);
     engine.set_input_unchecked("temperature", 31.0);
     let _ = engine.compute();
     println!("  [1] export_svg!(engine, dir, aggregated)");
     export_svg!(engine, "output/irrigacao", aggregated);
 
-    // Method 2: var_svg! — clean output variable
     println!("\n  [2] var_svg!(var)  — output variable, no input marker");
     let valve_var = fuzzy_var!("valve", 0.0, 100.0, 1001,
         "low"    => trapmf [ 0.0,  0.0, 20.0, 40.0],
@@ -418,7 +421,6 @@ fn sistema_irrigacao() {
     std::fs::write("output/irrigacao/valve_clean.svg", var_svg!(valve_var)).ok();
     println!("  ✓  output/irrigacao/valve_clean.svg");
 
-    // Method 3: var_svg! with input — moisture per scenario
     println!("\n  [3] var_svg!(var, value)  — moisture per scenario");
     let moisture_var = fuzzy_var!("moisture", 0.0, 100.0, 1001,
         "low"    => trapmf [ 0.0,  0.0, 30.0,  50.0],
@@ -434,7 +436,6 @@ fn sistema_irrigacao() {
         println!("  ✓  {} ({:.0}%)", path, moist);
     }
 
-    // Method 4: var_svg! with input — temperature per scenario
     println!("\n  [4] var_svg!(var, value)  — temperature per scenario");
     let temp_var = fuzzy_var!("temperature", 0.0, 40.0, 1001,
         "cold" => trapmf [ 0.0,  0.0, 15.0, 22.0],
@@ -459,7 +460,7 @@ fn main() {
 
     println!();
     divider();
-    println!("  logicfuzzy-academic v0.1.2");
+    println!("  logicfuzzy-academic v0.1.5");
     println!("  Pure-Rust Mamdani Fuzzy Inference System");
     println!("  Disciplina: Inteligência Artificial e Computacional — CESUPA");
     divider();

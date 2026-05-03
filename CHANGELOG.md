@@ -4,11 +4,47 @@ All notable changes to `logicfuzzy-academic` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
-
-## [Unreleased]
-
 ### Pending (next major feature)
 - Takagi-Sugeno inference model (alternative to Mamdani)
+
+---
+
+## [0.1.5] — 2026-05-03
+
+### Fixed
+- `examples/demo.rs`: replaced invalid `result["$1"]` with `result["tip"]` and `result["valve"]`, preventing runtime panic. Scenario tables now display correct values.
+- `src/rule.rs`: `firing_strength` now returns `0.0` immediately if any antecedent variable or term is missing, instead of silently ignoring the problem.
+- `src/rule.rs`: `RuleBuilder::build()` now calls `rule.with_weight(self.weight)`, ensuring weight validation (panic for weights outside `[0.0, 1.0]`).
+- `src/engine.rs`: `set_input_unchecked` now panics if the variable is not registered as an antecedent, avoiding silent misleading behavior.
+- `src/engine.rs`: `export_aggregated_svg` and `discrete_cog` now correctly handle multiple consequents per rule (added via `also()`).
+- `src/engine.rs`: unified aggregation pipeline via private `aggregated_mfs()` method, eliminating code duplication across `compute()`, `explain()`, `export_aggregated_svg()`, and `discrete_cog()`.
+- `src/explain.rs`: `dominant_term()` now uses `total_cmp` to safely handle NaN membership degrees.
+- `src/engine.rs`: `discrete_cog` now asserts `step > 0.0` to prevent infinite loops.
+- `src/error.rs`: `try_add_antecedent` and `try_add_consequent` now return `DuplicateVariable` error instead of misusing `MissingInput`.
+- `src/svg.rs`: annotation box width now uses `chars().count()` instead of `len()`, fixing layout with Unicode characters (e.g., `"médio"`).
+
+### Added
+- `src/error.rs`: new `DuplicateVariable` variant in `FuzzyError` enum.
+- `src/error.rs`: `NoRulesFired` now carries a `diagnostics: Vec<String>` field for detailed debugging.
+- `src/engine.rs`: `try_add_antecedent` and `try_add_consequent` methods returning `Result<(), FuzzyError>`.
+- `src/engine.rs`: `validate_rules()` method to check that all referenced variables and terms exist.
+- `src/engine.rs`: `build_no_rules_fired_error()` private helper for constructing detailed `NoRulesFired` errors.
+- `src/engine.rs`: `firing_degrees_by_consequent()` private helper to compute per-consequent firing strengths, reused by `export_aggregated_svg`.
+- `src/explain.rs`: `RuleFiring` now stores `consequents: Vec<(String, String)>` instead of single fields, supporting multiple consequents.
+- `src/rule.rs`: `Expression` enum (AST) for arbitrary logical combinations of antecedents with `AND`/`OR` nesting.
+- `src/rule.rs`: `Rule::from_expression()` constructor and `Rule::expression()` accessor.
+- `src/rule.rs`: `RuleBuilder::when_expr()` to accept an `Expression` tree.
+- `src/macros.rs`: `rule!` macro expanded to support 4 and 5 antecedents (uniform `AND` or `OR`).
+- `src/variable.rs`: `Universe` now caches discrete points internally; `points()` returns `&[f64]` instead of `Vec<f64>`.
+- `src/engine.rs`: `MamdaniEngine` now derives `Clone`.
+- `.github/workflows/ci.yml`: added verification that SVG outputs are produced by the demo job.
+- Comprehensive unit tests for all new features (228 tests total).
+
+### Changed
+- Internal maps in `MamdaniEngine` changed from `HashMap` to `BTreeMap`, ensuring deterministic iteration order in `print_summary`, `explain`, and SVG exports.
+- `Rule`, `Antecedent`, and `RuleBuilder` now use `BTreeMap` in method signatures to match the engine.
+- `examples/demo.rs`: version string updated to `v0.1.5`; audit table “Op” column now reads the connector directly from the rule instead of using a hardcoded array.
+- All tests updated to reflect the new APIs and data structures.
 
 ---
 

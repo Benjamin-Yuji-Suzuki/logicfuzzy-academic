@@ -40,3 +40,16 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+
+  demo:
+    name: Demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --example demo
+      - name: Verify SVG outputs
+        run: |
+          ls output/gorjeta/tip_aggregated.svg
+          ls output/irrigacao/valve_aggregated.svg
