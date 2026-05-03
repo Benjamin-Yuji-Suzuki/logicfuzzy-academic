@@ -9,6 +9,7 @@ use std::fmt;
 /// Returned by [`compute`](crate::MamdaniEngine::compute) and
 /// [`explain`](crate::MamdaniEngine::explain).
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum FuzzyError {
     /// A registered antecedent variable has no crisp input value.
     MissingInput(String),
@@ -24,8 +25,17 @@ pub enum FuzzyError {
     /// The provided value is not a valid number (NaN or infinity).
     InvalidInput { variable: String, value: f64 },
 
+    /// One or more rules reference variables or terms that are not registered.
+    InvalidRule {
+        /// Human‑readable description of all validation errors.
+        message: String,
+    },
+
     /// All rules had a firing degree of zero — no rule contributed to the output.
-    NoRulesFired { diagnostics: Vec<String> },
+    NoRulesFired {
+        /// Human‑readable explanations for why no rule fired.
+        diagnostics: Vec<String>,
+    },
 
     /// A variable with the same name is already registered.
     DuplicateVariable(String),
@@ -40,6 +50,8 @@ impl fmt::Display for FuzzyError {
                 write!(f, "input '{variable}' = {value} is outside universe [{min}, {max}]; value was clamped"),
             FuzzyError::InvalidInput { variable, value } =>
                 write!(f, "input '{variable}' = {value} is not a valid number (NaN or infinite)"),
+            FuzzyError::InvalidRule { message } =>
+                write!(f, "invalid rule: {}", message),
             FuzzyError::NoRulesFired { diagnostics } => {
                 write!(f, "no rule fired — all firing degrees are zero")?;
                 if !diagnostics.is_empty() {
@@ -101,6 +113,16 @@ mod tests {
         };
         let s = e.to_string();
         assert!(s.contains("inf"));
+    }
+
+    #[test]
+    fn invalid_rule_display() {
+        let e = FuzzyError::InvalidRule {
+            message: "variable 'temp' not found".into(),
+        };
+        let s = e.to_string();
+        assert!(s.contains("invalid rule"));
+        assert!(s.contains("temp"));
     }
 
     #[test]

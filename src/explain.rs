@@ -1,12 +1,12 @@
 //! # explain.rs
 //!
-//! Estruturas de dados para o relatório de explicabilidade do sistema Fuzzy.
-//! Permite inspecionar cada etapa do pipeline Mamdani após um compute().
+//! Data structures for the Mamdani pipeline explanation report.
+//! Allows inspection of every step after a compute() cycle.
 
 use std::collections::HashMap;
 
 // ─────────────────────────────────────────────
-// RuleFiring: resultado de uma regra individual
+// RuleFiring: result of a single rule
 // ─────────────────────────────────────────────
 
 /// Result of evaluating a single fuzzy inference rule.
@@ -27,7 +27,7 @@ pub struct RuleFiring {
 }
 
 // ─────────────────────────────────────────────
-// FuzzifiedVariable: resultado da fuzzificação
+// FuzzifiedVariable: result of fuzzification
 // ─────────────────────────────────────────────
 
 /// Fuzzification result for a single input variable.
@@ -55,7 +55,7 @@ impl FuzzifiedVariable {
 }
 
 // ─────────────────────────────────────────────
-// ExplainReport: relatório completo
+// ExplainReport: full report
 // ─────────────────────────────────────────────
 
 /// Full explanation report of one Mamdani inference cycle.
@@ -122,14 +122,15 @@ impl ExplainReport {
     }
 
     fn bar(degree: f64) -> String {
-        let filled = (degree * 10.0).round() as usize;
+        let safe = degree.clamp(0.0, 1.0);
+        let filled = (safe * 10.0).round() as usize;
         let empty = 10 - filled.min(10);
         format!("[{}{}]", "█".repeat(filled.min(10)), "░".repeat(empty))
     }
 }
 
 // ─────────────────────────────────────────────
-// CogTable: tabela de centroide discreto
+// CogTable: discrete centroid table
 // ─────────────────────────────────────────────
 
 /// Discrete Centre-of-Gravity (COG) table for a consequent variable.
@@ -144,6 +145,7 @@ pub struct CogTable {
 }
 
 impl CogTable {
+    /// Prints the step-by-step Centre-of-Gravity table to stdout.
     pub fn print(&self, label: &str) {
         println!("\n  [ COG table — {} ]", label);
         println!(
@@ -171,7 +173,7 @@ impl CogTable {
 }
 
 // ─────────────────────────────────────────────
-// Testes unitários
+// Unit tests
 // ─────────────────────────────────────────────
 
 #[cfg(test)]
@@ -191,32 +193,32 @@ mod tests {
     }
 
     #[test]
-    fn dominant_term_retorna_o_maior() {
+    fn dominant_term_returns_highest() {
         let fv = make_fv(&[("low", 0.2), ("medium", 0.8), ("high", 0.1)]);
         assert_eq!(fv.dominant_term(), Some("medium"));
     }
 
     #[test]
-    fn dominant_term_retorna_primeiro_quando_empate() {
+    fn dominant_term_returns_some_on_tie() {
         let fv = make_fv(&[("a", 0.5), ("b", 0.5)]);
         let dom = fv.dominant_term();
         assert!(dom == Some("a") || dom == Some("b"));
     }
 
     #[test]
-    fn dominant_term_vazio_retorna_none() {
+    fn dominant_term_empty_returns_none() {
         let fv = make_fv(&[]);
         assert_eq!(fv.dominant_term(), None);
     }
 
     #[test]
-    fn dominant_term_unico_retorna_ele() {
+    fn dominant_term_single_returns_itself() {
         let fv = make_fv(&[("only", 0.73)]);
         assert_eq!(fv.dominant_term(), Some("only"));
     }
 
     #[test]
-    fn dominant_term_grau_zero_ainda_retorna() {
+    fn dominant_term_zero_degree_still_returns() {
         let fv = make_fv(&[("a", 0.0), ("b", 0.0)]);
         assert!(fv.dominant_term().is_some());
     }
@@ -292,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_contem_todas_secoes() {
+    fn summary_contains_all_sections() {
         let s = make_report().summary();
         assert!(s.contains("Fuzzification"));
         assert!(s.contains("Rule Evaluation"));
@@ -300,39 +302,39 @@ mod tests {
     }
 
     #[test]
-    fn summary_contem_nome_da_variavel() {
+    fn summary_contains_variable_name() {
         let s = make_report().summary();
         assert!(s.contains("temperatura"));
     }
 
     #[test]
-    fn summary_contem_valor_crisp() {
+    fn summary_contains_crisp_value() {
         let s = make_report().summary();
         assert!(s.contains("5.0") || s.contains("5,0"));
     }
 
     #[test]
-    fn summary_contem_contagem_fired_skipped() {
+    fn summary_contains_fired_skipped_count() {
         let s = make_report().summary();
         assert!(s.contains("1 fired"));
         assert!(s.contains("1 skipped"));
     }
 
     #[test]
-    fn summary_contem_saida_defuzzificada() {
+    fn summary_contains_defuzzified_output() {
         let s = make_report().summary();
         assert!(s.contains("speed"));
         assert!(s.contains("18.5") || s.contains("18,5"));
     }
 
     #[test]
-    fn summary_marca_regra_disparada_com_check() {
+    fn summary_marks_fired_rule_with_check() {
         let s = make_report().summary();
         assert!(s.contains('✓'));
     }
 
     #[test]
-    fn summary_marca_regra_nao_disparada_com_x() {
+    fn summary_marks_skipped_rule_with_x() {
         let s = make_report().summary();
         assert!(s.contains('✗'));
     }

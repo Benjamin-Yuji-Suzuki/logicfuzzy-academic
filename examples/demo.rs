@@ -82,7 +82,7 @@ fn section(t: &str) {
     );
 }
 
-fn print_pipeline(engine: &MamdaniEngine, output_var: &str) {
+fn print_pipeline(engine: &mut MamdaniEngine, output_var: &str) {
     let report = engine.explain().expect("explain failed");
 
     section("Fuzzification");
@@ -166,7 +166,7 @@ fn sistema_gorjeta() {
     section("Main scenario  →  quality=6.5  service=5.0");
     engine.set_input_unchecked("food_quality", 6.5);
     engine.set_input_unchecked("service", 5.0);
-    print_pipeline(&engine, "tip");
+    print_pipeline(&mut engine, "tip");
 
     if let Some(cog) = engine.discrete_cog("tip", 5.0) {
         cog.print("tip — step 5.0");
@@ -301,7 +301,7 @@ fn sistema_irrigacao() {
     section("Main scenario  →  moisture=38%  temperature=31°C");
     engine.set_input_unchecked("moisture", 38.0);
     engine.set_input_unchecked("temperature", 31.0);
-    print_pipeline(&engine, "valve");
+    print_pipeline(&mut engine, "valve");
 
     section("Audit table");
     {
@@ -337,6 +337,7 @@ fn sistema_irrigacao() {
             let op_str = match connector {
                 logicfuzzy_academic::rule::Connector::And => "AND (min)",
                 logicfuzzy_academic::rule::Connector::Or => "OR (max)",
+                _ => "?",
             };
             tr.push(vec![
                 format!("R{}", i + 1),

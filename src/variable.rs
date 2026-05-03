@@ -71,6 +71,11 @@ impl Universe {
     pub fn step(&self) -> f64 {
         (self.max - self.min) / ((self.resolution - 1) as f64)
     }
+
+    /// Returns `true` if `x` is within the universe bounds `[min, max]` (inclusive).
+    pub fn contains(&self, x: f64) -> bool {
+        x >= self.min && x <= self.max && x.is_finite()
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -85,6 +90,7 @@ pub struct Term {
 }
 
 impl Term {
+    /// Creates a new `Term` with the given label and membership function.
     pub fn new(label: impl Into<String>, mf: MembershipFn) -> Self {
         Self {
             label: label.into(),
@@ -92,10 +98,12 @@ impl Term {
         }
     }
 
+    /// Evaluates the membership degree of `x` for this term.
     pub fn eval(&self, x: f64) -> f64 {
         self.mf.eval(x)
     }
 
+    /// Evaluates the membership degree at each point in `points`.
     pub fn eval_universe(&self, points: &[f64]) -> Vec<f64> {
         self.mf.eval_universe(points)
     }
@@ -105,6 +113,9 @@ impl Term {
 // FuzzyVariable
 // ─────────────────────────────────────────────────────────────────
 
+/// A fuzzy linguistic variable defined over a [`Universe`] with a set of named [`Term`]s.
+///
+/// Can act as both an antecedent (input) or a consequent (output) in a [`crate::MamdaniEngine`].
 #[derive(Debug, Clone)]
 pub struct FuzzyVariable {
     pub name: String,
@@ -113,6 +124,7 @@ pub struct FuzzyVariable {
 }
 
 impl FuzzyVariable {
+    /// Creates a new `FuzzyVariable` with the given name and universe, with no terms yet.
     pub fn new(name: impl Into<String>, universe: Universe) -> Self {
         Self {
             name: name.into(),
@@ -121,6 +133,10 @@ impl FuzzyVariable {
         }
     }
 
+    /// Adds a linguistic term to this variable.
+    ///
+    /// # Panics
+    /// Panics if a term with the same label already exists.
     pub fn add_term(&mut self, term: Term) {
         assert!(
             !self.terms.iter().any(|t| t.label == term.label),
@@ -131,10 +147,15 @@ impl FuzzyVariable {
         self.terms.push(term);
     }
 
+    /// Returns a reference to the term with the given label, or `None` if not found.
     pub fn get_term(&self, label: &str) -> Option<&Term> {
         self.terms.iter().find(|t| t.label == label)
     }
 
+    /// Returns the membership degree of `x` for the term `label`.
+    ///
+    /// # Panics
+    /// Panics if the term is not registered.
     pub fn membership_at(&self, label: &str, x: f64) -> f64 {
         match self.get_term(label) {
             Some(term) => term.eval(x),
@@ -147,6 +168,7 @@ impl FuzzyVariable {
         }
     }
 
+    /// Returns `(label, membership_degree)` for every term at crisp value `x`.
     pub fn fuzzify(&self, x: f64) -> Vec<(&str, f64)> {
         self.terms
             .iter()
@@ -154,14 +176,17 @@ impl FuzzyVariable {
             .collect()
     }
 
+    /// Returns the labels of all registered terms in insertion order.
     pub fn term_labels(&self) -> Vec<&str> {
         self.terms.iter().map(|t| t.label.as_str()).collect()
     }
 
+    /// Returns the number of registered terms.
     pub fn term_count(&self) -> usize {
         self.terms.len()
     }
 
+    /// Returns a slice of all registered terms.
     pub fn terms(&self) -> &[Term] {
         &self.terms
     }
@@ -171,6 +196,10 @@ impl FuzzyVariable {
         self.universe.points()
     }
 
+    /// Returns the membership degrees of term `label` evaluated at every universe point.
+    ///
+    /// # Panics
+    /// Panics if the term is not registered.
     pub fn term_membership_curve(&self, label: &str) -> Vec<f64> {
         let term = self
             .get_term(label)
@@ -194,7 +223,9 @@ impl FuzzyVariable {
 // Aliases
 // ─────────────────────────────────────────────────────────────────
 
+/// Type alias for [`FuzzyVariable`] used as an input variable.
 pub type AntecedentVar = FuzzyVariable;
+/// Type alias for [`FuzzyVariable`] used as an output variable.
 pub type ConsequentVar = FuzzyVariable;
 
 // ─────────────────────────────────────────────────────────────────
@@ -209,13 +240,13 @@ mod tests {
     // ── Universe ───────────────────────────────────────────────
 
     #[test]
-    fn universe_points_tamanho() {
+    fn universe_points_length() {
         let u = Universe::new(0.0, 100.0, 1001);
         assert_eq!(u.points().len(), 1001);
     }
 
     #[test]
-    fn universe_points_limites() {
+    fn universe_points_boundaries() {
         let u = Universe::new(0.0, 50.0, 501);
         let pts = u.points();
         assert_eq!(pts[0], 0.0);
@@ -223,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn universe_points_meio() {
+    fn universe_points_midpoint() {
         let u = Universe::new(0.0, 100.0, 101);
         let pts = u.points();
         assert!((pts[50] - 50.0).abs() < 1e-10);
@@ -236,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn universe_dois_pontos() {
+    fn universe_two_points() {
         let u = Universe::new(10.0, 20.0, 2);
         let pts = u.points();
         assert_eq!(pts.len(), 2);
@@ -283,35 +314,35 @@ mod tests {
     // ── Term ───────────────────────────────────────────────────
 
     #[test]
-    fn term_eval_pico() {
-        let t = Term::new("alto", MembershipFn::Trimf([50.0, 100.0, 100.0]));
+    fn term_eval_peak() {
+        let t = Term::new("high", MembershipFn::Trimf([50.0, 100.0, 100.0]));
         assert_eq!(t.eval(100.0), 1.0);
     }
     #[test]
     fn term_eval_zero() {
-        let t = Term::new("baixo", MembershipFn::Trimf([0.0, 0.0, 50.0]));
+        let t = Term::new("low", MembershipFn::Trimf([0.0, 0.0, 50.0]));
         assert_eq!(t.eval(100.0), 0.0);
     }
     #[test]
-    fn term_label_preservado() {
-        let t = Term::new("medio", MembershipFn::Trimf([0.0, 50.0, 100.0]));
-        assert_eq!(t.label, "medio");
+    fn term_label_preserved() {
+        let t = Term::new("medium", MembershipFn::Trimf([0.0, 50.0, 100.0]));
+        assert_eq!(t.label, "medium");
     }
     #[test]
-    fn term_eval_universe_tamanho() {
+    fn term_eval_universe_length() {
         let t = Term::new("x", MembershipFn::Trimf([0.0, 50.0, 100.0]));
         let u = Universe::new(0.0, 100.0, 101);
-        let graus = t.eval_universe(u.points());
-        assert_eq!(graus.len(), 101);
+        let degrees = t.eval_universe(u.points());
+        assert_eq!(degrees.len(), 101);
     }
 
     // ── FuzzyVariable ──────────────────────────────────────────
 
     fn make_var() -> FuzzyVariable {
-        let mut v = FuzzyVariable::new("temperatura", Universe::new(0.0, 50.0, 501));
-        v.add_term(Term::new("fria", MembershipFn::Trimf([0.0, 0.0, 25.0])));
-        v.add_term(Term::new("morna", MembershipFn::Trimf([0.0, 25.0, 50.0])));
-        v.add_term(Term::new("quente", MembershipFn::Trimf([25.0, 50.0, 50.0])));
+        let mut v = FuzzyVariable::new("temperature", Universe::new(0.0, 50.0, 501));
+        v.add_term(Term::new("cold", MembershipFn::Trimf([0.0, 0.0, 25.0])));
+        v.add_term(Term::new("warm", MembershipFn::Trimf([0.0, 25.0, 50.0])));
+        v.add_term(Term::new("hot", MembershipFn::Trimf([25.0, 50.0, 50.0])));
         v
     }
 
@@ -320,136 +351,132 @@ mod tests {
         assert_eq!(make_var().term_count(), 3);
     }
     #[test]
-    fn var_get_term_existente() {
+    fn var_get_term_exists() {
         let v = make_var();
-        assert!(v.get_term("morna").is_some());
+        assert!(v.get_term("warm").is_some());
     }
     #[test]
-    fn var_get_term_inexistente() {
+    fn var_get_term_missing() {
         let v = make_var();
-        assert!(v.get_term("gelada").is_none());
+        assert!(v.get_term("freezing").is_none());
     }
     #[test]
-    fn var_membership_at_pico() {
+    fn var_membership_at_peak() {
         let v = make_var();
-        assert_eq!(v.membership_at("fria", 0.0), 1.0);
-        assert_eq!(v.membership_at("quente", 50.0), 1.0);
+        assert_eq!(v.membership_at("cold", 0.0), 1.0);
+        assert_eq!(v.membership_at("hot", 50.0), 1.0);
     }
     #[test]
-    fn var_membership_at_morna_pico() {
+    fn var_membership_at_warm_peak() {
         let v = make_var();
-        assert!((v.membership_at("morna", 25.0) - 1.0).abs() < 1e-10);
+        assert!((v.membership_at("warm", 25.0) - 1.0).abs() < 1e-10);
     }
     #[test]
-    fn var_membership_at_sem_pertinencia() {
+    fn var_membership_at_no_membership() {
         let v = make_var();
-        assert_eq!(v.membership_at("fria", 50.0), 0.0);
+        assert_eq!(v.membership_at("cold", 50.0), 0.0);
     }
     #[test]
-    fn var_fuzzify_retorna_todos_termos() {
+    fn var_fuzzify_returns_all_terms() {
         let v = make_var();
-        let resultado = v.fuzzify(25.0);
-        assert_eq!(resultado.len(), 3);
+        let result = v.fuzzify(25.0);
+        assert_eq!(result.len(), 3);
     }
     #[test]
-    fn var_fuzzify_graus_corretos() {
+    fn var_fuzzify_correct_degrees() {
         let v = make_var();
-        let resultado = v.fuzzify(25.0);
-        let morna = resultado.iter().find(|(l, _)| *l == "morna").unwrap().1;
-        assert!((morna - 1.0).abs() < 1e-10);
+        let result = v.fuzzify(25.0);
+        let warm = result.iter().find(|(l, _)| *l == "warm").unwrap().1;
+        assert!((warm - 1.0).abs() < 1e-10);
     }
     #[test]
-    fn var_fuzzify_ponto_intermediario() {
+    fn var_fuzzify_intermediate_point() {
         let v = make_var();
-        let resultado = v.fuzzify(12.5);
-        let fria = resultado.iter().find(|(l, _)| *l == "fria").unwrap().1;
-        let morna = resultado.iter().find(|(l, _)| *l == "morna").unwrap().1;
-        assert!((fria - 0.5).abs() < 1e-10);
-        assert!((morna - 0.5).abs() < 1e-10);
+        let result = v.fuzzify(12.5);
+        let cold = result.iter().find(|(l, _)| *l == "cold").unwrap().1;
+        let warm = result.iter().find(|(l, _)| *l == "warm").unwrap().1;
+        assert!((cold - 0.5).abs() < 1e-10);
+        assert!((warm - 0.5).abs() < 1e-10);
     }
     #[test]
     fn var_term_labels() {
         let v = make_var();
         let labels = v.term_labels();
-        assert_eq!(labels, vec!["fria", "morna", "quente"]);
+        assert_eq!(labels, vec!["cold", "warm", "hot"]);
     }
     #[test]
-    fn var_universe_points_tamanho() {
+    fn var_universe_points_length() {
         let v = make_var();
         assert_eq!(v.universe_points().len(), 501);
     }
     #[test]
-    fn var_membership_curve_tamanho() {
+    fn var_membership_curve_length() {
         let v = make_var();
-        let curve = v.term_membership_curve("morna");
+        let curve = v.term_membership_curve("warm");
         assert_eq!(curve.len(), 501);
     }
     #[test]
-    fn var_membership_curve_pico_correto() {
+    fn var_membership_curve_peak_correct() {
         let v = make_var();
         let pts = v.universe_points();
-        let curve = v.term_membership_curve("morna");
-        let idx_pico = pts.iter().position(|&p| (p - 25.0).abs() < 1e-9).unwrap();
-        assert!((curve[idx_pico] - 1.0).abs() < 1e-10);
+        let curve = v.term_membership_curve("warm");
+        let idx_peak = pts.iter().position(|&p| (p - 25.0).abs() < 1e-9).unwrap();
+        assert!((curve[idx_peak] - 1.0).abs() < 1e-10);
     }
     #[test]
     #[should_panic(expected = "already exists")]
-    fn var_add_term_duplicado_panics() {
+    fn var_add_duplicate_term_panics() {
         let mut v = FuzzyVariable::new("v", Universe::new(0.0, 10.0, 101));
-        v.add_term(Term::new("baixo", MembershipFn::Trimf([0.0, 0.0, 5.0])));
-        v.add_term(Term::new("baixo", MembershipFn::Trimf([0.0, 0.0, 5.0])));
+        v.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 5.0])));
+        v.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 5.0])));
     }
     #[test]
     #[should_panic(expected = "not found")]
-    fn var_membership_at_label_invalido_panics() {
+    fn var_membership_at_invalid_label_panics() {
         let v = make_var();
-        v.membership_at("inexistente", 10.0);
+        v.membership_at("nonexistent", 10.0);
     }
 
     #[test]
-    fn antecedent_var_e_fuzzy_variable() {
-        let mut ant: AntecedentVar = FuzzyVariable::new("umidade", Universe::new(0.0, 100.0, 101));
+    fn antecedent_var_is_fuzzy_variable() {
+        let mut ant: AntecedentVar = FuzzyVariable::new("humidity", Universe::new(0.0, 100.0, 101));
         ant.add_term(Term::new(
-            "baixa",
+            "low",
             MembershipFn::Trapmf([0.0, 0.0, 30.0, 50.0]),
         ));
-        assert_eq!(ant.membership_at("baixa", 0.0), 1.0);
+        assert_eq!(ant.membership_at("low", 0.0), 1.0);
     }
 
     #[test]
-    fn consequent_var_e_fuzzy_variable() {
-        let mut con: ConsequentVar =
-            FuzzyVariable::new("velocidade", Universe::new(0.0, 100.0, 101));
-        con.add_term(Term::new(
-            "rapida",
-            MembershipFn::Trimf([60.0, 100.0, 100.0]),
-        ));
-        assert_eq!(con.membership_at("rapida", 100.0), 1.0);
+    fn consequent_var_is_fuzzy_variable() {
+        let mut con: ConsequentVar = FuzzyVariable::new("speed", Universe::new(0.0, 100.0, 101));
+        con.add_term(Term::new("fast", MembershipFn::Trimf([60.0, 100.0, 100.0])));
+        assert_eq!(con.membership_at("fast", 100.0), 1.0);
     }
 
     #[test]
-    fn var_trapmf_plano_central() {
+    fn var_trapmf_flat_central() {
         let mut v = FuzzyVariable::new("v", Universe::new(0.0, 100.0, 1001));
         v.add_term(Term::new(
-            "medio",
+            "medium",
             MembershipFn::Trapmf([20.0, 35.0, 65.0, 80.0]),
         ));
-        assert_eq!(v.membership_at("medio", 50.0), 1.0);
+        assert_eq!(v.membership_at("medium", 50.0), 1.0);
     }
 
     #[test]
-    fn var_trapmf_rampa_aberta_esquerda() {
+    fn var_trapmf_left_open_shoulder() {
         let mut v = FuzzyVariable::new("v", Universe::new(0.0, 100.0, 1001));
         v.add_term(Term::new(
-            "baixo",
+            "low",
             MembershipFn::Trapmf([0.0, 0.0, 25.0, 50.0]),
         ));
-        assert_eq!(v.membership_at("baixo", 0.0), 1.0);
-        assert_eq!(v.membership_at("baixo", 50.0), 0.0);
+        assert_eq!(v.membership_at("low", 0.0), 1.0);
+        assert_eq!(v.membership_at("low", 50.0), 0.0);
     }
 
     #[test]
-    fn to_svg_retorna_string_nao_vazia() {
+    fn to_svg_returns_non_empty_string() {
         let v = make_var();
         let svg = v.to_svg();
         assert!(!svg.is_empty());
@@ -461,5 +488,27 @@ mod tests {
         let u1 = Universe::new(0.0, 10.0, 101);
         let u2 = Universe::with_resolution(0.0, 10.0, 101);
         assert_eq!(u1.points(), u2.points());
+    }
+
+    #[test]
+    fn universe_contains_inside() {
+        let u = Universe::new(0.0, 100.0, 101);
+        assert!(u.contains(0.0));
+        assert!(u.contains(50.0));
+        assert!(u.contains(100.0));
+    }
+
+    #[test]
+    fn universe_contains_outside() {
+        let u = Universe::new(0.0, 100.0, 101);
+        assert!(!u.contains(-1.0));
+        assert!(!u.contains(101.0));
+    }
+
+    #[test]
+    fn universe_contains_rejects_nan_inf() {
+        let u = Universe::new(0.0, 100.0, 101);
+        assert!(!u.contains(f64::NAN));
+        assert!(!u.contains(f64::INFINITY));
     }
 }

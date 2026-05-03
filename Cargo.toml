@@ -1,9 +1,9 @@
 [package]
 name        = "logicfuzzy_academic"
-version     = "0.1.6"
+version     = "0.1.7"
 edition     = "2021"
 rust-version = "1.70"
-authors     = ["Benjamin Yuji Suzuki <byujisuzuki@gmail.com>"]  
+authors     = ["Benjamin Yuji Suzuki <byujisuzuki@gmail.com>"]
 description = "Pure-Rust Mamdani Fuzzy Inference System — no external fuzzy crates"
 license     = "MIT"
 repository  = "https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic"

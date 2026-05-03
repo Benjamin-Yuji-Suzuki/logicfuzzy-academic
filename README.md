@@ -49,7 +49,7 @@ export_svg!(engine, "output/", aggregated);
 - **`MamdaniEngine: Clone`** — clone the engine to run multiple scenarios without rebuilding
 - **CI with coverage** — separate `doc-test` job, `coverage` job with `cargo-llvm-cov` and Codecov upload
 - **Zero fuzzy dependencies** — only Rust `std`
-- **261 unit tests + 3 doctests** — covering the full pipeline
+- **274 unit tests + 6 doctests** — covering the full pipeline
 
 ---
 
@@ -352,7 +352,7 @@ crisp inputs  →  fuzzification  →  inference (AND=min, OR=max, NOT=1-μ)
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
 cargo run --example demo   # two systems + SVG export to output/
-cargo test                 # 261 tests (unit + doctests)
+cargo test                 # 274 tests (unit + doctests)
 ```
 
 ---

@@ -7,12 +7,22 @@ use crate::variable::FuzzyVariable;
 use std::collections::BTreeMap;
 use std::fmt;
 
+/// Logical connector between antecedents in a flat rule: AND (min) or OR (max).
+/// # Example
+/// ```
+/// use logicfuzzy_academic::rule::Connector;
+/// let c = Connector::And;
+/// ```
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Connector {
+    /// Minimum t-norm: firing = min(μ₁, μ₂, …)
     And,
+    /// Maximum s-norm: firing = max(μ₁, μ₂, …)
     Or,
 }
 
+/// A single antecedent condition: `variable IS [NOT] term`.
 #[derive(Debug, Clone)]
 pub struct Antecedent {
     pub var: String,
@@ -21,6 +31,13 @@ pub struct Antecedent {
 }
 
 impl Antecedent {
+    /// Creates a non-negated antecedent: `var IS term`.
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::Antecedent;
+    /// let a = Antecedent::new("temperature", "cold");
+    /// assert!(!a.negated);
+    /// ```
     pub fn new(var: impl Into<String>, term: impl Into<String>) -> Self {
         Self {
             var: var.into(),
@@ -29,6 +46,13 @@ impl Antecedent {
         }
     }
 
+    /// Creates a negated antecedent: `var IS NOT term` (complement: `1 − μ`).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::Antecedent;
+    /// let a = Antecedent::negated("temperature", "cold");
+    /// assert!(a.negated);
+    /// ```
     pub fn negated(var: impl Into<String>, term: impl Into<String>) -> Self {
         Self {
             var: var.into(),
@@ -37,6 +61,8 @@ impl Antecedent {
         }
     }
 
+    /// Evaluates this antecedent given the current inputs and registered variables.
+    /// Returns `None` if the variable or term is missing.
     pub fn eval(
         &self,
         inputs: &BTreeMap<String, f64>,
@@ -64,11 +90,24 @@ pub enum Expression {
 
 impl Expression {
     /// Creates a terminal expression from an Antecedent.
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::{Expression, Antecedent};
+    /// let expr = Expression::term(Antecedent::new("x", "a"));
+    /// ```
     pub fn term(antecedent: Antecedent) -> Self {
         Expression::Term { antecedent }
     }
 
     /// Creates an AND expression from a list of sub-expressions.
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::{Expression, Antecedent};
+    /// let expr = Expression::and(vec![
+    ///     Expression::term(Antecedent::new("x", "a")),
+    ///     Expression::term(Antecedent::new("y", "b")),
+    /// ]);
+    /// ```
     pub fn and(operands: Vec<Expression>) -> Self {
         assert!(
             !operands.is_empty(),
@@ -78,6 +117,14 @@ impl Expression {
     }
 
     /// Creates an OR expression from a list of sub-expressions.
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::{Expression, Antecedent};
+    /// let expr = Expression::or(vec![
+    ///     Expression::term(Antecedent::new("x", "a")),
+    ///     Expression::term(Antecedent::new("y", "b")),
+    /// ]);
+    /// ```
     pub fn or(operands: Vec<Expression>) -> Self {
         assert!(
             !operands.is_empty(),
@@ -139,6 +186,19 @@ impl fmt::Display for Expression {
     }
 }
 
+/// A Mamdani inference rule: `IF <antecedents> THEN <consequents>`.
+///
+/// Rules can be created via the [`rule!`](crate::rule!) macro, [`RuleBuilder`], or [`Rule::from_expression`]
+/// for arbitrary nested logic.
+/// # Example
+/// ```
+/// use logicfuzzy_academic::rule::{Rule, Antecedent, Connector};
+/// let rule = Rule::new(
+///     vec![Antecedent::new("temp", "cold")],
+///     Connector::And,
+///     vec![("speed".into(), "slow".into())],
+/// );
+/// ```
 #[derive(Debug, Clone)]
 pub struct Rule {
     /// Optional expression tree; if present, it replaces antecedents + connector.
@@ -152,6 +212,15 @@ pub struct Rule {
 
 impl Rule {
     /// Create a rule from a list of antecedents and a single connector (backward-compatible).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::{Rule, Antecedent, Connector};
+    /// let rule = Rule::new(
+    ///     vec![Antecedent::new("temp", "cold")],
+    ///     Connector::And,
+    ///     vec![("speed".into(), "slow".into())],
+    /// );
+    /// ```
     pub fn new(
         antecedents: Vec<Antecedent>,
         connector: Connector,
@@ -175,6 +244,12 @@ impl Rule {
     }
 
     /// Create a rule from an expression tree (AST).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::{Rule, Expression, Antecedent};
+    /// let expr = Expression::term(Antecedent::new("x", "a"));
+    /// let rule = Rule::from_expression(expr, vec![("y".into(), "b".into())]);
+    /// ```
     pub fn from_expression(expression: Expression, consequents: Vec<(String, String)>) -> Self {
         assert!(
             !consequents.is_empty(),
@@ -189,6 +264,20 @@ impl Rule {
         }
     }
 
+    /// Sets the rule weight, scaling the firing degree. Must be in `[0.0, 1.0]`.
+    ///
+    /// # Panics
+    /// Panics if `weight` is outside `[0.0, 1.0]`.
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::{Rule, Antecedent, Connector};
+    /// let rule = Rule::new(
+    ///     vec![Antecedent::new("x", "a")],
+    ///     Connector::And,
+    ///     vec![("y".into(), "b".into())],
+    /// ).with_weight(0.8);
+    /// assert!((rule.weight() - 0.8).abs() < 1e-9);
+    /// ```
     pub fn with_weight(mut self, weight: f64) -> Self {
         assert!(
             (0.0..=1.0).contains(&weight),
@@ -199,10 +288,12 @@ impl Rule {
         self
     }
 
+    /// Returns the antecedents as a slice of [`Antecedent`] structs (with negation flag).
     pub fn antecedents_full(&self) -> &[Antecedent] {
         &self.antecedents
     }
 
+    /// Returns `(variable, term)` pairs for each antecedent.
     pub fn antecedents(&self) -> Vec<(&str, &str)> {
         self.antecedents
             .iter()
@@ -210,26 +301,36 @@ impl Rule {
             .collect()
     }
 
+    /// Returns the logical connector (`And` / `Or`) used for flat antecedent lists.
+    ///
+    /// For rules created via [`Rule::from_expression`], this returns `And` by default,
+    /// but the actual logic is determined by the [`Expression`] tree — use
+    /// [`Rule::expression`] to inspect it.
     pub fn connector(&self) -> &Connector {
         &self.connector
     }
 
+    /// Returns all consequents as `(variable, term)` pairs.
     pub fn consequents(&self) -> &[(String, String)] {
         &self.consequents
     }
 
+    /// Returns the variable name of the first consequent.
     pub fn consequent_var(&self) -> &str {
         &self.consequents[0].0
     }
 
+    /// Returns the term name of the first consequent.
     pub fn consequent_term(&self) -> &str {
         &self.consequents[0].1
     }
 
+    /// Returns the number of antecedents in the flat list (0 for expression-based rules).
     pub fn antecedent_count(&self) -> usize {
         self.antecedents.len()
     }
 
+    /// Returns the rule weight (default `1.0`).
     pub fn weight(&self) -> f64 {
         self.weight
     }
@@ -239,6 +340,15 @@ impl Rule {
         self.expression.as_ref()
     }
 
+    /// Returns `true` if this rule was created from an [`Expression`] tree.
+    pub fn is_expression_based(&self) -> bool {
+        self.expression.is_some()
+    }
+
+    /// Computes the firing strength of the rule given the current crisp inputs.
+    ///
+    /// Uses the expression tree if present; otherwise evaluates the flat antecedent list.
+    /// Returns `0.0` immediately if any variable or term is missing.
     pub fn firing_strength(
         &self,
         inputs: &BTreeMap<String, f64>,
@@ -315,6 +425,17 @@ impl fmt::Display for Rule {
     }
 }
 
+/// Fluent builder for constructing [`Rule`] instances.
+///
+/// # Example
+/// ```
+/// use logicfuzzy_academic::rule::RuleBuilder;
+/// let rule = RuleBuilder::new()
+///     .when("temperature", "hot")
+///     .and("humidity", "high")
+///     .then("fan_speed", "fast")
+///     .build();
+/// ```
 #[derive(Debug, Default)]
 pub struct RuleBuilder {
     antecedents: Vec<Antecedent>,
@@ -325,6 +446,7 @@ pub struct RuleBuilder {
 }
 
 impl RuleBuilder {
+    /// Creates a new `RuleBuilder` with default weight `1.0`.
     pub fn new() -> Self {
         Self {
             weight: 1.0,
@@ -332,61 +454,160 @@ impl RuleBuilder {
         }
     }
 
+    /// Adds the first antecedent (`IF var IS term`).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when("temperature", "cold")
+    ///     .then("speed", "slow")
+    ///     .build();
+    /// ```
     pub fn when(mut self, var: &str, term: &str) -> Self {
         self.antecedents.push(Antecedent::new(var, term));
         self
     }
 
+    /// Adds the first antecedent with negation (`IF var IS NOT term`).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when_not("temperature", "cold")
+    ///     .then("speed", "fast")
+    ///     .build();
+    /// ```
     pub fn when_not(mut self, var: &str, term: &str) -> Self {
         self.antecedents.push(Antecedent::negated(var, term));
         self
     }
 
     /// Accepts an `Expression` tree; this replaces any previous antecedents.
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::{RuleBuilder, Expression, Antecedent};
+    /// let expr = Expression::term(Antecedent::new("x", "a"));
+    /// let rule = RuleBuilder::new()
+    ///     .when_expr(expr)
+    ///     .then("y", "b")
+    ///     .build();
+    /// ```
     pub fn when_expr(mut self, expr: Expression) -> Self {
         self.expression = Some(expr);
         self
     }
 
+    /// Adds an AND antecedent (`AND var IS term`).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when("x", "a")
+    ///     .and("y", "b")
+    ///     .then("z", "c")
+    ///     .build();
+    /// ```
     pub fn and(mut self, var: &str, term: &str) -> Self {
         self.connector = Some(Connector::And);
         self.antecedents.push(Antecedent::new(var, term));
         self
     }
 
+    /// Adds an AND antecedent with negation (`AND var IS NOT term`).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when("x", "a")
+    ///     .and_not("y", "b")
+    ///     .then("z", "c")
+    ///     .build();
+    /// ```
     pub fn and_not(mut self, var: &str, term: &str) -> Self {
         self.connector = Some(Connector::And);
         self.antecedents.push(Antecedent::negated(var, term));
         self
     }
 
+    /// Adds an OR antecedent (`OR var IS term`).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when("x", "a")
+    ///     .or("y", "b")
+    ///     .then("z", "c")
+    ///     .build();
+    /// ```
     pub fn or(mut self, var: &str, term: &str) -> Self {
         self.connector = Some(Connector::Or);
         self.antecedents.push(Antecedent::new(var, term));
         self
     }
 
+    /// Adds an OR antecedent with negation (`OR var IS NOT term`).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when("x", "a")
+    ///     .or_not("y", "b")
+    ///     .then("z", "c")
+    ///     .build();
+    /// ```
     pub fn or_not(mut self, var: &str, term: &str) -> Self {
         self.connector = Some(Connector::Or);
         self.antecedents.push(Antecedent::negated(var, term));
         self
     }
 
+    /// Sets the primary consequent (`THEN var IS term`).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when("x", "a")
+    ///     .then("y", "b")
+    ///     .build();
+    /// assert_eq!(rule.consequent_var(), "y");
+    /// ```
     pub fn then(mut self, var: &str, term: &str) -> Self {
         self.consequents.push((var.to_string(), term.to_string()));
         self
     }
 
+    /// Adds an additional consequent (`AND var IS term` on the THEN side).
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when("x", "a")
+    ///     .then("y", "b")
+    ///     .also("z", "c")
+    ///     .build();
+    /// assert_eq!(rule.consequents().len(), 2);
+    /// ```
     pub fn also(mut self, var: &str, term: &str) -> Self {
         self.consequents.push((var.to_string(), term.to_string()));
         self
     }
 
+    /// Sets the rule weight. Must be in `[0.0, 1.0]`.
+    /// # Example
+    /// ```
+    /// use logicfuzzy_academic::rule::RuleBuilder;
+    /// let rule = RuleBuilder::new()
+    ///     .when("x", "a")
+    ///     .then("y", "b")
+    ///     .weight(0.5)
+    ///     .build();
+    /// ```
     pub fn weight(mut self, w: f64) -> Self {
         self.weight = w;
         self
     }
 
+    /// Builds the [`Rule`]. Alias: [`done`](Self::done).
     pub fn build(self) -> Rule {
         if let Some(expr) = self.expression {
             Rule::from_expression(expr, self.consequents).with_weight(self.weight)
@@ -397,6 +618,7 @@ impl RuleBuilder {
         }
     }
 
+    /// Alias for [`build`](Self::build).
     pub fn done(self) -> Rule {
         self.build()
     }
@@ -532,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn expression_antecedents_recursivo() {
+    fn expression_antecedents_recursive() {
         let expr = Expression::and(vec![
             Expression::term(Antecedent::new("x", "a")),
             Expression::or(vec![
@@ -916,12 +1138,29 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "weight must be in [0.0, 1.0]")]
-    fn rule_weight_negativo_panics() {
+    fn rule_weight_negative_panics() {
         Rule::new(
             vec![Antecedent::new("x", "a")],
             Connector::And,
             vec![("y".to_string(), "b".to_string())],
         )
         .with_weight(-0.1);
+    }
+
+    #[test]
+    fn is_expression_based_for_flat_rule() {
+        let r = Rule::new(
+            vec![Antecedent::new("x", "a")],
+            Connector::And,
+            vec![("y".to_string(), "b".to_string())],
+        );
+        assert!(!r.is_expression_based());
+    }
+
+    #[test]
+    fn is_expression_based_for_expression_rule() {
+        let expr = Expression::term(Antecedent::new("x", "a"));
+        let r = Rule::from_expression(expr, vec![("y".to_string(), "b".to_string())]);
+        assert!(r.is_expression_based());
     }
 }

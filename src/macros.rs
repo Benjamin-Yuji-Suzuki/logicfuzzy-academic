@@ -1,19 +1,19 @@
 //! # macros.rs
 //!
-//! Macros declarativas para construir sistemas Fuzzy com menos verbosidade.
+//! Declarative macros for building fuzzy systems with less verbosity.
 //!
-//! ## Macros disponíveis
+//! ## Available macros
 //!
-//! | Macro | O que faz |
+//! | Macro | What it does |
 //! |---|---|
-//! | `rule!` | Cria uma regra IF–THEN em linguagem natural |
-//! | `fuzzy_var!` | Cria um `FuzzyVariable` com universo e termos |
-//! | `antecedent!` | Cria e registra uma variável de entrada no engine |
-//! | `consequent!` | Cria e registra uma variável de saída no engine |
-//! | `var_svg!` | Gera SVG de uma `FuzzyVariable` (com ou sem marcador de entrada) |
-//! | `export_svg!` | Exporta todos os SVGs do engine para um diretório |
+//! | `rule!` | Creates an IF–THEN rule in natural language |
+//! | `fuzzy_var!` | Creates a `FuzzyVariable` with universe and terms |
+//! | `antecedent!` | Creates and registers an input variable in the engine |
+//! | `consequent!` | Creates and registers an output variable in the engine |
+//! | `var_svg!` | Generates SVG of a `FuzzyVariable` (with or without input marker) |
+//! | `export_svg!` | Exports all SVGs of the engine to a directory |
 //!
-//! ## Funções de pertinência suportadas nas macros
+//! ## Supported membership functions in the macros
 //!
 //! ```text
 //! "label" => trimf   [a, b, c]
@@ -22,7 +22,7 @@
 //! ```
 
 // ─────────────────────────────────────────────────────────────────
-// __make_term! — helper interno, nao faz parte da API publica
+// __make_term! — internal helper, not part of the public API
 // ─────────────────────────────────────────────────────────────────
 
 /// Internal helper — converts (label, mf_type, params) into a `Term`.
@@ -44,7 +44,7 @@ macro_rules! __make_term {
             $crate::MembershipFn::Trapmf([$a as f64, $b as f64, $c as f64, $d as f64]),
         )
     };
-    // Gaussiana: { mean: m, sigma: s }
+    // Gaussian: { mean: m, sigma: s }
     ($label:literal, gaussmf, { mean: $mean:expr, sigma: $sigma:expr }) => {
         $crate::Term::new(
             $label,
@@ -57,7 +57,7 @@ macro_rules! __make_term {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// fuzzy_var! — cria FuzzyVariable com todos os termos
+// fuzzy_var! — creates FuzzyVariable with all terms
 // ─────────────────────────────────────────────────────────────────
 
 /// Creates a [`FuzzyVariable`](crate::FuzzyVariable) with its universe and all linguistic terms
@@ -81,7 +81,7 @@ macro_rules! fuzzy_var {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// antecedent! — cria e registra variavel de entrada no engine
+// antecedent! — creates and registers an input variable in the engine
 // ─────────────────────────────────────────────────────────────────
 
 /// Creates a [`FuzzyVariable`](crate::FuzzyVariable) and registers it as an antecedent
@@ -103,7 +103,7 @@ macro_rules! antecedent {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// consequent! — cria e registra variavel de saida no engine
+// consequent! — creates and registers an output variable in the engine
 // ─────────────────────────────────────────────────────────────────
 
 /// Creates a [`FuzzyVariable`](crate::FuzzyVariable) and registers it as a consequent
@@ -125,7 +125,7 @@ macro_rules! consequent {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// rule! — DSL para regras IF–THEN
+// rule! — DSL for IF–THEN rules
 // ─────────────────────────────────────────────────────────────────
 
 /// Declarative macro for building Fuzzy IF–THEN rules.
@@ -146,7 +146,7 @@ macro_rules! consequent {
 /// use logicfuzzy_academic::rule::Connector;
 ///
 /// // 2 antecedents
-/// let r = rule!(IF temperatura IS quente OR umidade IS alta THEN velocidade_ventilador IS rapida);
+/// let r = rule!(IF temperature IS hot OR humidity IS high THEN fan_speed IS fast);
 ///
 /// // 3 antecedents
 /// let r = rule!(IF a IS x AND b IS y AND c IS z THEN out IS result);
@@ -159,7 +159,7 @@ macro_rules! consequent {
 /// ```
 #[macro_export]
 macro_rules! rule {
-    // ── 1 antecedente NOT ─────────────────────────────────────────
+    // ── 1 antecedent NOT ─────────────────────────────────────────
     (IF $v1:ident IS NOT $t1:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when_not(stringify!($v1), stringify!($t1))
@@ -167,7 +167,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 1 antecedente ─────────────────────────────────────────────
+    // ── 1 antecedent ─────────────────────────────────────────────
     (IF $v1:ident IS $t1:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -175,7 +175,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 2 antecedentes: AND ────────────────────────────────────────
+    // ── 2 antecedents: AND ────────────────────────────────────────
     (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -184,7 +184,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 2 antecedentes: AND NOT ────────────────────────────────────
+    // ── 2 antecedents: AND NOT ────────────────────────────────────
     (IF $v1:ident IS $t1:ident AND NOT $v2:ident IS $t2:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -193,7 +193,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 2 antecedentes: NOT AND ────────────────────────────────────
+    // ── 2 antecedents: NOT AND ────────────────────────────────────
     (IF $v1:ident IS NOT $t1:ident AND $v2:ident IS $t2:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when_not(stringify!($v1), stringify!($t1))
@@ -202,7 +202,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 2 antecedentes: OR ─────────────────────────────────────────
+    // ── 2 antecedents: OR ─────────────────────────────────────────
     (IF $v1:ident IS $t1:ident OR $v2:ident IS $t2:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -211,7 +211,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 2 antecedentes: OR NOT ─────────────────────────────────────
+    // ── 2 antecedents: OR NOT ─────────────────────────────────────
     (IF $v1:ident IS $t1:ident OR NOT $v2:ident IS $t2:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -220,7 +220,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 3 antecedentes: AND AND ────────────────────────────────────
+    // ── 3 antecedents: AND AND ────────────────────────────────────
     (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident AND $v3:ident IS $t3:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -230,7 +230,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 3 antecedentes: AND OR (mixed) ─────────────────────────────
+    // ── 3 antecedents: AND OR (mixed) ─────────────────────────────
     (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident OR $v3:ident IS $t3:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -240,7 +240,17 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 4 antecedentes: AND AND AND ────────────────────────────────
+    // ── 3 antecedents: OR OR ──────────────────────────────────────
+    (IF $v1:ident IS $t1:ident OR $v2:ident IS $t2:ident OR $v3:ident IS $t3:ident THEN $cv:ident IS $ct:ident) => {
+        $crate::rule::RuleBuilder::new()
+            .when(stringify!($v1), stringify!($t1))
+            .or(stringify!($v2), stringify!($t2))
+            .or(stringify!($v3), stringify!($t3))
+            .then(stringify!($cv), stringify!($ct))
+            .build()
+    };
+
+    // ── 4 antecedents: AND AND AND ────────────────────────────────
     (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident AND $v3:ident IS $t3:ident AND $v4:ident IS $t4:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -251,7 +261,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 4 antecedentes: OR OR OR ───────────────────────────────────
+    // ── 4 antecedents: OR OR OR ───────────────────────────────────
     (IF $v1:ident IS $t1:ident OR $v2:ident IS $t2:ident OR $v3:ident IS $t3:ident OR $v4:ident IS $t4:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -262,7 +272,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 5 antecedentes: AND AND AND AND ────────────────────────────
+    // ── 5 antecedents: AND AND AND AND ────────────────────────────
     (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident AND $v3:ident IS $t3:ident AND $v4:ident IS $t4:ident AND $v5:ident IS $t5:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -274,7 +284,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 5 antecedentes: OR OR OR OR ────────────────────────────────
+    // ── 5 antecedents: OR OR OR OR ────────────────────────────────
     (IF $v1:ident IS $t1:ident OR $v2:ident IS $t2:ident OR $v3:ident IS $t3:ident OR $v4:ident IS $t4:ident OR $v5:ident IS $t5:ident THEN $cv:ident IS $ct:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -286,7 +296,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 1 antecedente, 2 consequentes (multi-consequent) ──────────
+    // ── 1 antecedent, 2 consequents (multi-consequent) ──────────
     (IF $v1:ident IS $t1:ident THEN $cv1:ident IS $ct1:ident AND $cv2:ident IS $ct2:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -295,7 +305,7 @@ macro_rules! rule {
             .build()
     };
 
-    // ── 2 antecedentes AND, 2 consequentes ────────────────────────
+    // ── 2 antecedents AND, 2 consequents ────────────────────────
     (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident THEN $cv1:ident IS $ct1:ident AND $cv2:ident IS $ct2:ident) => {
         $crate::rule::RuleBuilder::new()
             .when(stringify!($v1), stringify!($t1))
@@ -307,7 +317,7 @@ macro_rules! rule {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// var_svg! — gera SVG de uma FuzzyVariable
+// var_svg! — generates SVG of a FuzzyVariable
 // ─────────────────────────────────────────────────────────────────
 
 /// Generates an SVG string for a [`FuzzyVariable`](crate::FuzzyVariable).
@@ -319,32 +329,32 @@ macro_rules! rule {
 /// Returns a `String` containing self-contained SVG markup.
 #[macro_export]
 macro_rules! var_svg {
-    // Sem marcador de entrada / without input marker
+    // Without input marker
     ($var:expr) => {
         $var.to_svg()
     };
-    // Com marcador de entrada / with input marker
+    // With input marker
     ($var:expr, $value:expr) => {
         $var.to_svg_with_input($value as f64)
     };
 }
 
 // ─────────────────────────────────────────────────────────────────
-// export_svg! — exporta SVGs do engine para um diretório
+// export_svg! — exports SVGs of the engine to a directory
 // ─────────────────────────────────────────────────────────────────
 
 /// Exports SVG files for all variables of a [`MamdaniEngine`](crate::MamdaniEngine)
 /// to a directory, printing a status line for each outcome.
 #[macro_export]
 macro_rules! export_svg {
-    // Somente MFs / membership functions only
+    // Membership functions only
     ($engine:expr, $dir:expr) => {{
         match $engine.export_svg($dir) {
             Ok(_) => println!("  ✓  SVGs → {}", $dir),
             Err(e) => println!("  ✗  Error writing SVGs to {}: {}", $dir, e),
         }
     }};
-    // MFs + saída agregada / membership + aggregated output
+    // Membership + aggregated output
     ($engine:expr, $dir:expr, aggregated) => {{
         match $engine.export_svg($dir) {
             Ok(_) => println!("  ✓  Membership SVGs → {}", $dir),
@@ -358,7 +368,7 @@ macro_rules! export_svg {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Testes unitarios
+// Unit tests
 // ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -440,12 +450,11 @@ mod tests {
     #[test]
     fn rule_equivalent_to_builder() {
         use crate::rule::RuleBuilder;
-        let via_macro =
-            rule!(IF temperatura IS quente AND umidade IS alta THEN velocidade IS rapida);
+        let via_macro = rule!(IF temperature IS hot AND humidity IS high THEN speed IS fast);
         let via_builder = RuleBuilder::new()
-            .when("temperatura", "quente")
-            .and("umidade", "alta")
-            .then("velocidade", "rapida")
+            .when("temperature", "hot")
+            .and("humidity", "high")
+            .then("speed", "fast")
             .build();
         assert_eq!(
             via_macro.antecedents().len(),
@@ -458,19 +467,18 @@ mod tests {
 
     #[test]
     fn rule_to_string_readable() {
-        let r =
-            rule!(IF temperatura IS quente OR umidade IS alta THEN velocidade_ventilador IS rapida);
+        let r = rule!(IF temperature IS hot OR humidity IS high THEN fan_speed IS fast);
         let s = r.to_string();
-        assert!(s.contains("temperatura"));
-        assert!(s.contains("quente"));
+        assert!(s.contains("temperature"));
+        assert!(s.contains("hot"));
         assert!(s.contains("OR"));
-        assert!(s.contains("rapida"));
+        assert!(s.contains("fast"));
     }
 
     // ── fuzzy_var! ─────────────────────────────────────────────────
 
     #[test]
-    fn fuzzy_var_cria_com_termos_corretos() {
+    fn fuzzy_var_creates_with_correct_terms() {
         let var = fuzzy_var!("temperature", 0.0, 50.0, 501,
             "cold" => trimf [0.0,  0.0, 25.0],
             "warm" => trimf [0.0, 25.0, 50.0],
@@ -481,7 +489,7 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_var_trimf_grau_correto() {
+    fn fuzzy_var_trimf_correct_degree() {
         let var = fuzzy_var!("x", 0.0, 10.0, 101,
             "low" => trimf [0.0, 0.0, 5.0],
         );
@@ -490,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_var_trapmf_grau_correto() {
+    fn fuzzy_var_trapmf_correct_degree() {
         let var = fuzzy_var!("x", 0.0, 10.0, 101,
             "mid" => trapmf [2.0, 3.0, 7.0, 8.0],
         );
@@ -499,15 +507,15 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_var_gaussmf_pico_correto() {
+    fn fuzzy_var_gaussmf_peak_correct() {
         let var = fuzzy_var!("x", 0.0, 100.0, 1001,
-            "centro" => gaussmf { mean: 50.0, sigma: 10.0 },
+            "center" => gaussmf { mean: 50.0, sigma: 10.0 },
         );
-        assert!((var.membership_at("centro", 50.0) - 1.0).abs() < 1e-9);
+        assert!((var.membership_at("center", 50.0) - 1.0).abs() < 1e-9);
     }
 
     #[test]
-    fn fuzzy_var_sem_virgula_final() {
+    fn fuzzy_var_trailing_comma() {
         let var = fuzzy_var!("x", 0.0, 10.0, 101,
             "a" => trimf [0.0, 5.0, 10.0]
         );
@@ -515,7 +523,7 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_var_mf_mistas() {
+    fn fuzzy_var_mixed_mfs() {
         let var = fuzzy_var!("x", 0.0, 100.0, 1001,
             "low"    => trimf   [0.0,   0.0,  40.0],
             "medium" => trapmf  [30.0, 40.0,  60.0, 70.0],
@@ -525,10 +533,10 @@ mod tests {
         assert_eq!(var.term_count(), 4);
     }
 
-    // ── antecedent! e consequent! ──────────────────────────────────
+    // ── antecedent! and consequent! ──────────────────────────────────
 
     #[test]
-    fn antecedent_registra_no_engine() {
+    fn antecedent_registers_in_engine() {
         use crate::MamdaniEngine;
         let mut engine = MamdaniEngine::new();
         antecedent!(engine, "temperature", 0.0, 50.0, 501,
@@ -539,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn consequent_registra_no_engine() {
+    fn consequent_registers_in_engine() {
         use crate::MamdaniEngine;
         let mut engine = MamdaniEngine::new();
         consequent!(engine, "fan_speed", 0.0, 100.0, 1001,
@@ -550,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn antecedent_multiplos_acumulam() {
+    fn multiple_antecedents_accumulate() {
         use crate::MamdaniEngine;
         let mut engine = MamdaniEngine::new();
         antecedent!(engine, "temperature", 0.0, 50.0,  501,
@@ -565,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn antecedent_consequent_pipeline_completo() {
+    fn antecedent_consequent_full_pipeline() {
         use crate::MamdaniEngine;
         let mut engine = MamdaniEngine::new();
 
@@ -588,5 +596,13 @@ mod tests {
         engine.set_input_unchecked("x", 8.0);
         let out = engine.compute().unwrap()["y"];
         assert!(out > 5.0);
+    }
+
+    #[test]
+    fn rule_three_antecedents_all_or() {
+        let r = rule!(IF a IS x OR b IS y OR c IS z THEN output IS result);
+        assert_eq!(r.antecedents().len(), 3);
+        assert_eq!(r.connector(), &Connector::Or);
+        assert_eq!(r.antecedents()[2].0, "c");
     }
 }

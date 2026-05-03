@@ -8,6 +8,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Takagi-Sugeno inference model (alternative to Mamdani)
 
 ---
+
+## [0.1.7] — 2026-05-03
+
+### Fixed
+- `compute()` and `explain()` restored to `&self` (using `AtomicBool` for interior mutability), fixing a breaking change in `0.1.6`.
+- `InvalidRule` variant no longer includes a misleading `index` field.
+- `MamdaniEngine` kept `Sync` via `AtomicBool` and manual `Clone`.
+
+### Added
+- Added `# Examples` code blocks to all public API items; documentation coverage improved significantly.
+- `rules_dirty` caching: first `compute()`/`explain()` call after modifications triggers automatic rule validation.
+- `reset_inputs()` method to clear all crisp inputs.
+- `Universe::contains(x)` helper.
+- `Rule::is_expression_based()` helper.
+- Doc comments on all public methods and structs.
+
+### Changed
+- `set_input_unchecked` documentation improved to indicate internal/test use; visibility remains `pub`.
+- `ExplainReport::bar` now clamps degrees to [0,1] to avoid UB with NaN.
+- Improved documentation for `interp_membership`, `Rule::connector`, and other items.
+
 ## [0.1.6] — 2026-05-03
 
 ### Fixed

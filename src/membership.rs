@@ -127,6 +127,9 @@ impl MembershipFn {
 
 /// Interpolates the membership degree of `value` given a discrete universe
 /// and its pre-computed membership vector.
+///
+/// Values outside the universe are clamped to the nearest boundary membership
+/// (constant extrapolation), not linearly extrapolated.
 pub fn interp_membership(universe: &[f64], memberships: &[f64], value: f64) -> f64 {
     assert_eq!(
         universe.len(),
@@ -175,63 +178,63 @@ mod tests {
 
     // trimf
     #[test]
-    fn trimf_pico() {
+    fn trimf_peak() {
         assert_eq!(trimf(50.0, 0.0, 50.0, 100.0), 1.0);
     }
     #[test]
-    fn trimf_fora_esq() {
+    fn trimf_outside_left() {
         assert_eq!(trimf(-1.0, 0.0, 50.0, 100.0), 0.0);
     }
     #[test]
-    fn trimf_fora_dir() {
+    fn trimf_outside_right() {
         assert_eq!(trimf(101.0, 0.0, 50.0, 100.0), 0.0);
     }
     #[test]
-    fn trimf_meio_subida() {
+    fn trimf_mid_rise() {
         assert!((trimf(25.0, 0.0, 50.0, 100.0) - 0.5).abs() < 1e-10);
     }
     #[test]
-    fn trimf_meio_descida() {
+    fn trimf_mid_fall() {
         assert!((trimf(75.0, 0.0, 50.0, 100.0) - 0.5).abs() < 1e-10);
     }
 
     // trapmf
     #[test]
-    fn trapmf_plano() {
+    fn trapmf_flat() {
         assert_eq!(trapmf(50.0, 20.0, 30.0, 70.0, 80.0), 1.0);
     }
     #[test]
-    fn trapmf_borda_b() {
+    fn trapmf_edge_b() {
         assert_eq!(trapmf(30.0, 20.0, 30.0, 70.0, 80.0), 1.0);
     }
     #[test]
-    fn trapmf_borda_c() {
+    fn trapmf_edge_c() {
         assert_eq!(trapmf(70.0, 20.0, 30.0, 70.0, 80.0), 1.0);
     }
     #[test]
-    fn trapmf_fora_esq() {
+    fn trapmf_outside_left() {
         assert_eq!(trapmf(10.0, 20.0, 30.0, 70.0, 80.0), 0.0);
     }
     #[test]
-    fn trapmf_fora_dir() {
+    fn trapmf_outside_right() {
         assert_eq!(trapmf(90.0, 20.0, 30.0, 70.0, 80.0), 0.0);
     }
     #[test]
-    fn trapmf_aberta_esq() {
+    fn trapmf_open_left() {
         assert_eq!(trapmf(0.0, 0.0, 0.0, 30.0, 50.0), 1.0);
     }
     #[test]
-    fn trapmf_aberta_dir() {
+    fn trapmf_open_right() {
         assert_eq!(trapmf(100.0, 60.0, 80.0, 100.0, 100.0), 1.0);
     }
 
     // gaussmf
     #[test]
-    fn gaussmf_pico() {
+    fn gaussmf_peak() {
         assert!((gaussmf(50.0, 50.0, 10.0) - 1.0).abs() < 1e-10);
     }
     #[test]
-    fn gaussmf_simetria() {
+    fn gaussmf_symmetry() {
         assert!((gaussmf(40.0, 50.0, 10.0) - gaussmf(60.0, 50.0, 10.0)).abs() < 1e-10);
     }
     #[test]
@@ -276,7 +279,7 @@ mod tests {
 
     // interp_membership
     #[test]
-    fn interp_exato() {
+    fn interp_exact() {
         let u = vec![0.0, 50.0, 100.0];
         let m = vec![0.0, 1.0, 0.0];
         assert_eq!(interp_membership(&u, &m, 50.0), 1.0);
@@ -288,7 +291,7 @@ mod tests {
         assert!((interp_membership(&u, &m, 50.0) - 0.5).abs() < 1e-10);
     }
     #[test]
-    fn interp_fora() {
+    fn interp_outside() {
         let u = vec![0.0, 100.0];
         let m = vec![0.5, 0.8];
         assert_eq!(interp_membership(&u, &m, -10.0), 0.5);
@@ -296,14 +299,14 @@ mod tests {
     }
 
     #[test]
-    fn trimf_ombro_esquerdo_valor_intermediario() {
-        let resultado = trimf(7.0, 5.0, 5.0, 10.0);
-        assert!((resultado - 0.6).abs() < 1e-10);
+    fn trimf_left_shoulder_intermediate() {
+        let result = trimf(7.0, 5.0, 5.0, 10.0);
+        assert!((result - 0.6).abs() < 1e-10);
     }
 
     #[test]
-    fn trimf_ombro_direito_valor_intermediario() {
-        let resultado = trimf(7.0, 0.0, 10.0, 10.0);
-        assert!((resultado - 0.7).abs() < 1e-10);
+    fn trimf_right_shoulder_intermediate() {
+        let result = trimf(7.0, 0.0, 10.0, 10.0);
+        assert!((result - 0.7).abs() < 1e-10);
     }
 }

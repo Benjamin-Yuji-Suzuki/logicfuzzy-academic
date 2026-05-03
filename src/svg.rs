@@ -177,16 +177,7 @@ fn draw_legend(s: &mut String, var: &FuzzyVariable) {
     rect(s, ML, ly, PW, LEG - 6.0, 4.0, SURFACE, 0.45);
 
     // Title
-    text(
-        s,
-        ML + 8.0,
-        ly + 14.0,
-        "start",
-        MUTED,
-        8,
-        false,
-        "Terms / Termos:",
-    );
+    text(s, ML + 8.0, ly + 14.0, "start", MUTED, 8, false, "Terms:");
 
     // Items — evenly spaced after the title
     let title_w = 84.0;
@@ -286,6 +277,7 @@ fn draw_intersection(
     rect(s, lx, ly, lw, 14.0, 3.0, BG, 0.90);
     text(s, lx + lw / 2.0, ly + 10.0, "middle", color, 9, true, label);
 }
+
 // ─── Main render: membership function SVG ────────────────────────
 
 /// Generates a self-contained SVG string for a `FuzzyVariable`.
@@ -307,7 +299,7 @@ fn draw_intersection(
 ///     "warm" => trimf [0.0, 25.0, 50.0],
 ///     "hot"  => trimf [25.0,50.0, 50.0],
 /// );
-/// let svg = crate::logicfuzzy_academic::svg::render_variable_svg(&var, None);
+/// let svg = var.to_svg();
 /// assert!(svg.starts_with("<svg"));
 /// ```
 pub fn render_variable_svg(var: &FuzzyVariable, input: Option<f64>) -> String {
@@ -591,7 +583,7 @@ pub fn render_aggregated_svg(
         );
     }
 
-    // Legend (shows term + firing degree)
+    // Legend
     draw_legend(&mut s, var);
 
     s.push_str("</svg>");
@@ -638,14 +630,14 @@ mod tests {
     #[test]
     fn svg_contains_legend() {
         let svg = render_variable_svg(&make_var(), None);
-        assert!(svg.contains("Terms / Termos:"), "deve ter strip de legenda");
+        assert!(svg.contains("Terms:"), "should have legend strip");
     }
 
     #[test]
     fn svg_legend_contains_all_term_labels() {
-        // A legenda repete os labels dos termos, mas no strip de legenda
+        // Legend repeats term labels, but in the legend strip
         let svg = render_variable_svg(&make_var(), None);
-        // Verifica presença (pode aparecer mais de uma vez)
+        // Check presence (may appear more than once)
         assert!(svg.contains("cold"));
         assert!(svg.contains("warm"));
         assert!(svg.contains("hot"));
@@ -675,7 +667,7 @@ mod tests {
         let without = render_variable_svg(&make_var(), None);
         assert_eq!(
             with_out, without,
-            "input fora do universo deve ser ignorado"
+            "input outside universe should be ignored"
         );
     }
 
@@ -739,7 +731,7 @@ mod tests {
             ));
         }
         let svg = render_variable_svg(&v, None);
-        // Todos os 8 termos aparecem na legenda
+        // All 8 terms appear in the legend
         for i in 0..8 {
             assert!(svg.contains(&format!("t{}", i)));
         }
@@ -764,7 +756,7 @@ mod tests {
         v.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 50.0])));
         v.add_term(Term::new("high", MembershipFn::Trimf([50.0, 100.0, 100.0])));
         let svg = render_aggregated_svg(&v, &[("low", 0.3), ("high", 0.7)], 68.5);
-        assert!(svg.contains("Terms / Termos:"));
+        assert!(svg.contains("Terms:"));
     }
 
     #[test]
@@ -779,13 +771,13 @@ mod tests {
         // The label "centroid = 50.0000" only appears inside the plot when centroid is valid
         assert!(
             svg_in.contains("centroid = 50.0000"),
-            "centroide dentro do universo deve ter marcador com texto"
+            "centroid inside universe should have marker with text"
         );
         // The value 200.0000 only appears in the subtitle, never in a plot label
         let count_200 = svg_out.matches("200.0000").count();
         assert_eq!(
             count_200, 1,
-            "200 deve aparecer apenas no subtitulo, nao no marcador; encontrou {} vezes",
+            "200 should appear only in subtitle, not in marker; found {} times",
             count_200
         );
     }
