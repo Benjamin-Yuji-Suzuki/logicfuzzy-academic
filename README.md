@@ -21,7 +21,7 @@ export_svg!(engine, "output/", aggregated);
 
 ## 📝 AI Audit
 
-* **AI Assistance:** The logic, architecture, and development of this library were built with the assistance of Anthropic's **Claude Pro**. It was used as an advanced pair-programming tool to ensure high-quality, safe, and idiomatic Rust code.
+* **AI Assistance:** The logic, architecture, and development of this library were built with the assistance of Anthropic's **Claude Pro** and **DeepSeek**. It was used as an advanced pair-programming tool to ensure high-quality, safe, and idiomatic Rust code.
 
 ---
 
