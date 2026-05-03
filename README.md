@@ -372,6 +372,6 @@ Theoretical foundation:
 
 ## License
 
-MIT © 2025 [Benjamin Yuji Suzuki](https://github.com/Benjamin-Yuji-Suzuki)
+MIT © 2026 [Benjamin Yuji Suzuki](https://github.com/Benjamin-Yuji-Suzuki)
 
 See [LICENSE](./LICENSE) for the full text.
