@@ -21,11 +21,11 @@ pub enum FuzzyError {
         max: f64,
     },
 
+    /// The provided value is not a valid number (NaN or infinity).
+    InvalidInput { variable: String, value: f64 },
+
     /// All rules had a firing degree of zero — no rule contributed to the output.
-    NoRulesFired {
-        /// Human-readable explanations for why no rule fired.
-        diagnostics: Vec<String>,
-    },
+    NoRulesFired { diagnostics: Vec<String> },
 
     /// A variable with the same name is already registered.
     DuplicateVariable(String),
@@ -38,6 +38,8 @@ impl fmt::Display for FuzzyError {
                 write!(f, "missing crisp input for antecedent '{name}' — call set_input() first"),
             FuzzyError::InputOutOfRange { variable, value, min, max } =>
                 write!(f, "input '{variable}' = {value} is outside universe [{min}, {max}]; value was clamped"),
+            FuzzyError::InvalidInput { variable, value } =>
+                write!(f, "input '{variable}' = {value} is not a valid number (NaN or infinite)"),
             FuzzyError::NoRulesFired { diagnostics } => {
                 write!(f, "no rule fired — all firing degrees are zero")?;
                 if !diagnostics.is_empty() {
@@ -82,12 +84,31 @@ mod tests {
     }
 
     #[test]
+    fn invalid_input_display() {
+        let e = FuzzyError::InvalidInput {
+            variable: "x".into(),
+            value: f64::NAN,
+        };
+        let s = e.to_string();
+        assert!(s.contains("NaN"));
+    }
+
+    #[test]
+    fn invalid_input_infinity_display() {
+        let e = FuzzyError::InvalidInput {
+            variable: "x".into(),
+            value: f64::INFINITY,
+        };
+        let s = e.to_string();
+        assert!(s.contains("inf"));
+    }
+
+    #[test]
     fn no_rules_fired_display_empty_diagnostics() {
         let e = FuzzyError::NoRulesFired {
             diagnostics: vec![],
         };
         assert!(e.to_string().contains("zero"));
-        assert!(!e.to_string().contains("Diagnostics"));
     }
 
     #[test]

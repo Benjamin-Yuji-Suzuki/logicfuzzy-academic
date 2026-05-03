@@ -28,8 +28,21 @@ pub struct Universe {
 }
 
 impl Universe {
-    /// Creates a new universe. Requires `min < max` and `resolution >= 2`.
+    /// Creates a new universe. Requires `min < max`, `resolution >= 2`,
+    /// and both `min` and `max` must be finite (no NaN or infinity).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min` or `max` is NaN, infinite, or if `min >= max` or `resolution < 2`.
     pub fn new(min: f64, max: f64, resolution: usize) -> Self {
+        assert!(
+            min.is_finite(),
+            "Universe: min must be finite (not NaN or infinite)"
+        );
+        assert!(
+            max.is_finite(),
+            "Universe: max must be finite (not NaN or infinite)"
+        );
         assert!(min < max, "Universe: min must be less than max");
         assert!(resolution >= 2, "Universe: resolution must be >= 2");
         let points_cache = (0..resolution)
@@ -231,6 +244,42 @@ mod tests {
         assert_eq!(pts[1], 20.0);
     }
 
+    #[test]
+    #[should_panic(expected = "finite")]
+    fn universe_rejects_nan_min() {
+        Universe::new(f64::NAN, 10.0, 101);
+    }
+
+    #[test]
+    #[should_panic(expected = "finite")]
+    fn universe_rejects_nan_max() {
+        Universe::new(0.0, f64::NAN, 101);
+    }
+
+    #[test]
+    #[should_panic(expected = "finite")]
+    fn universe_rejects_inf_min() {
+        Universe::new(f64::INFINITY, 10.0, 101);
+    }
+
+    #[test]
+    #[should_panic(expected = "finite")]
+    fn universe_rejects_inf_max() {
+        Universe::new(0.0, f64::NEG_INFINITY, 101);
+    }
+
+    #[test]
+    #[should_panic(expected = "min must be less than max")]
+    fn universe_rejects_min_eq_max() {
+        Universe::new(5.0, 5.0, 101);
+    }
+
+    #[test]
+    #[should_panic(expected = "resolution must be >= 2")]
+    fn universe_rejects_resolution_1() {
+        Universe::new(0.0, 10.0, 1);
+    }
+
     // ── Term ───────────────────────────────────────────────────
 
     #[test]
@@ -252,7 +301,7 @@ mod tests {
     fn term_eval_universe_tamanho() {
         let t = Term::new("x", MembershipFn::Trimf([0.0, 50.0, 100.0]));
         let u = Universe::new(0.0, 100.0, 101);
-        let graus = t.eval_universe(&u.points());
+        let graus = t.eval_universe(u.points());
         assert_eq!(graus.len(), 101);
     }
 
@@ -397,5 +446,20 @@ mod tests {
         ));
         assert_eq!(v.membership_at("baixo", 0.0), 1.0);
         assert_eq!(v.membership_at("baixo", 50.0), 0.0);
+    }
+
+    #[test]
+    fn to_svg_retorna_string_nao_vazia() {
+        let v = make_var();
+        let svg = v.to_svg();
+        assert!(!svg.is_empty());
+        assert!(svg.contains("<svg"));
+    }
+
+    #[test]
+    fn universe_with_resolution_alias() {
+        let u1 = Universe::new(0.0, 10.0, 101);
+        let u2 = Universe::with_resolution(0.0, 10.0, 101);
+        assert_eq!(u1.points(), u2.points());
     }
 }

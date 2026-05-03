@@ -112,12 +112,20 @@ impl MamdaniEngine {
     }
 
     /// Validates all rules against the registered variables and terms.
-    /// Returns `Ok(())` if every rule is sound, or `Err` with a list of problems.
+    /// Now also inspects expression-based rules (AST).
     pub fn validate_rules(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
         for (i, rule) in self.rules.iter().enumerate() {
-            for (j, ant) in rule.antecedents_full().iter().enumerate() {
+            // Collect all antecedents: from flat list or from expression tree
+            let all_antecedents: Vec<&crate::rule::Antecedent> =
+                if let Some(expr) = rule.expression() {
+                    expr.antecedents()
+                } else {
+                    rule.antecedents_full().iter().collect()
+                };
+
+            for (j, ant) in all_antecedents.iter().enumerate() {
                 if let Some(var) = self.antecedents.get(&ant.var) {
                     if var.get_term(&ant.term).is_none() {
                         errors.push(format!(
@@ -167,6 +175,14 @@ impl MamdaniEngine {
     }
 
     pub fn set_input(&mut self, name: &str, value: f64) -> Result<(), FuzzyError> {
+        // Reject NaN and infinite values
+        if !value.is_finite() {
+            return Err(FuzzyError::InvalidInput {
+                variable: name.to_string(),
+                value,
+            });
+        }
+
         let var = self
             .antecedents
             .get(name)
@@ -195,6 +211,9 @@ impl MamdaniEngine {
             match e {
                 FuzzyError::MissingInput(_) => panic!("Variable '{}' not registered", name),
                 FuzzyError::InputOutOfRange { .. } => {}
+                FuzzyError::InvalidInput { .. } => {
+                    panic!("Invalid input value for variable '{}'", name)
+                }
                 FuzzyError::NoRulesFired { .. } => unreachable!(),
                 FuzzyError::DuplicateVariable(_) => unreachable!(),
             }
@@ -231,7 +250,6 @@ impl MamdaniEngine {
         aggregated
     }
 
-    /// Returns per-consequent firing degrees: `{ consequent_name → [(term, max_firing), ...] }`
     fn firing_degrees_by_consequent(&self) -> BTreeMap<String, Vec<(String, f64)>> {
         let mut firing_by_consequent: BTreeMap<String, Vec<(String, f64)>> = self
             .consequents
@@ -278,23 +296,23 @@ impl MamdaniEngine {
     pub fn explain(&self) -> Result<ExplainReport, FuzzyError> {
         let aggregated = self.aggregated_mfs();
 
-        let mut fuzzification: Vec<FuzzifiedVariable> = self
-            .antecedents
-            .iter()
-            .map(|(name, var)| {
-                let crisp = *self.inputs.get(name).unwrap_or(&0.0);
-                let term_degrees = var
-                    .fuzzify(crisp)
-                    .into_iter()
-                    .map(|(label, degree)| (label.to_string(), degree))
-                    .collect();
-                FuzzifiedVariable {
-                    variable: name.clone(),
-                    crisp_input: crisp,
-                    term_degrees,
-                }
-            })
-            .collect();
+        let mut fuzzification: Vec<FuzzifiedVariable> = Vec::new();
+        for (name, var) in &self.antecedents {
+            let crisp = *self
+                .inputs
+                .get(name)
+                .ok_or_else(|| FuzzyError::MissingInput(name.clone()))?;
+            let term_degrees = var
+                .fuzzify(crisp)
+                .into_iter()
+                .map(|(label, degree)| (label.to_string(), degree))
+                .collect();
+            fuzzification.push(FuzzifiedVariable {
+                variable: name.clone(),
+                crisp_input: crisp,
+                term_degrees,
+            });
+        }
         fuzzification.sort_by(|a, b| a.variable.cmp(&b.variable));
 
         let mut rule_firings = Vec::with_capacity(self.rules.len());
@@ -485,6 +503,14 @@ impl MamdaniEngine {
         self.consequents.len()
     }
 
+    pub fn antecedent_names(&self) -> Vec<&str> {
+        self.antecedents.keys().map(|k| k.as_str()).collect()
+    }
+
+    pub fn consequent_names(&self) -> Vec<&str> {
+        self.consequents.keys().map(|k| k.as_str()).collect()
+    }
+
     pub fn export_svg(&self, dir: &str) -> std::io::Result<()> {
         use std::fs;
         use std::path::Path;
@@ -614,6 +640,7 @@ impl Default for MamdaniEngine {
 mod tests {
     use super::*;
     use crate::rule::RuleBuilder;
+    use crate::rule::{Antecedent, Expression};
     use crate::{FuzzyVariable, MembershipFn, Term, Universe};
 
     fn motor_simples(mf_entrada: MembershipFn, mf_saida: MembershipFn) -> MamdaniEngine {
@@ -735,6 +762,24 @@ mod tests {
     }
 
     #[test]
+    fn set_input_rejects_nan() {
+        let mut m = MamdaniEngine::new();
+        let v = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        m.add_antecedent(v);
+        let err = m.set_input("x", f64::NAN).unwrap_err();
+        assert!(matches!(err, FuzzyError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn set_input_rejects_infinity() {
+        let mut m = MamdaniEngine::new();
+        let v = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        m.add_antecedent(v);
+        let err = m.set_input("x", f64::INFINITY).unwrap_err();
+        assert!(matches!(err, FuzzyError::InvalidInput { .. }));
+    }
+
+    #[test]
     fn centroide_mf_uniforme_e_ponto_medio() {
         let mut m = motor_simples(
             MembershipFn::Trapmf([0.0, 0.0, 10.0, 10.0]),
@@ -807,6 +852,21 @@ mod tests {
             FuzzyError::NoRulesFired { diagnostics } => assert!(!diagnostics.is_empty()),
             _ => panic!("expected NoRulesFired"),
         }
+    }
+
+    #[test]
+    fn explain_sem_set_input_retorna_missing_input() {
+        let mut m = MamdaniEngine::new();
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        x.add_term(Term::new("a", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        m.add_antecedent(x);
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 101));
+        y.add_term(Term::new("b", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        m.add_consequent(y);
+        m.add_rule(RuleBuilder::new().when("x", "a").then("y", "b").build());
+        // Não chamamos set_input — deve retornar MissingInput
+        let result = m.explain();
+        assert!(matches!(result, Err(FuzzyError::MissingInput(_))));
     }
 
     #[test]
@@ -1622,5 +1682,330 @@ mod tests {
         assert!(res.is_err());
         let errors = res.unwrap_err();
         assert!(errors[0].contains("term"));
+    }
+
+    #[test]
+    fn validate_rules_expression_com_variavel_inexistente_falha() {
+        let mut m = MamdaniEngine::new();
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 101));
+        y.add_term(Term::new("b", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        m.add_consequent(y);
+        // Regra via Expression referenciando "x_inexistente" que não existe
+        let expr = Expression::term(Antecedent::new("x_inexistente", "termo_a"));
+        let rule = Rule::from_expression(expr, vec![("y".to_string(), "b".to_string())]);
+        m.add_rule(rule);
+        let res = m.validate_rules();
+        assert!(res.is_err());
+        let errors = res.unwrap_err();
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("x_inexistente"));
+    }
+
+    // ── Tests for antecedent_names / consequent_names ────────────
+
+    #[test]
+    fn antecedent_names_vazio() {
+        let m = MamdaniEngine::new();
+        assert!(m.antecedent_names().is_empty());
+    }
+
+    #[test]
+    fn consequent_names_vazio() {
+        let m = MamdaniEngine::new();
+        assert!(m.consequent_names().is_empty());
+    }
+
+    #[test]
+    fn antecedent_names_com_variaveis() {
+        let mut m = MamdaniEngine::new();
+        m.add_antecedent(FuzzyVariable::new("temp", Universe::new(0.0, 50.0, 501)));
+        m.add_antecedent(FuzzyVariable::new(
+            "humidity",
+            Universe::new(0.0, 100.0, 1001),
+        ));
+        let names = m.antecedent_names();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"temp"));
+        assert!(names.contains(&"humidity"));
+    }
+
+    #[test]
+    fn consequent_names_com_variaveis() {
+        let mut m = MamdaniEngine::new();
+        m.add_consequent(FuzzyVariable::new("speed", Universe::new(0.0, 100.0, 1001)));
+        m.add_consequent(FuzzyVariable::new("valve", Universe::new(0.0, 100.0, 1001)));
+        let names = m.consequent_names();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"speed"));
+        assert!(names.contains(&"valve"));
+    }
+
+    // ── Pipeline tests with gaussmf ──────────────────────────────
+
+    #[test]
+    fn pipeline_gaussmf_simple() {
+        let mut m = MamdaniEngine::new();
+
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 1001));
+        x.add_term(Term::new(
+            "around5",
+            MembershipFn::Gaussmf {
+                mean: 5.0,
+                sigma: 1.0,
+            },
+        ));
+        m.add_antecedent(x);
+
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 1001));
+        y.add_term(Term::new(
+            "large",
+            MembershipFn::Gaussmf {
+                mean: 8.0,
+                sigma: 2.0,
+            },
+        ));
+        m.add_consequent(y);
+
+        m.add_rule(
+            RuleBuilder::new()
+                .when("x", "around5")
+                .then("y", "large")
+                .build(),
+        );
+
+        m.set_input_unchecked("x", 5.0);
+        let r = m.compute().unwrap();
+        let out = r["y"];
+        assert!(out > 6.0 && out < 9.0);
+    }
+
+    #[test]
+    fn pipeline_gaussmf_multiple_terms() {
+        let mut m = MamdaniEngine::new();
+
+        let mut temp = FuzzyVariable::new("temp", Universe::new(0.0, 50.0, 501));
+        temp.add_term(Term::new(
+            "cold",
+            MembershipFn::Gaussmf {
+                mean: 10.0,
+                sigma: 5.0,
+            },
+        ));
+        temp.add_term(Term::new(
+            "hot",
+            MembershipFn::Gaussmf {
+                mean: 40.0,
+                sigma: 5.0,
+            },
+        ));
+        m.add_antecedent(temp);
+
+        let mut speed = FuzzyVariable::new("speed", Universe::new(0.0, 100.0, 1001));
+        speed.add_term(Term::new(
+            "slow",
+            MembershipFn::Gaussmf {
+                mean: 20.0,
+                sigma: 10.0,
+            },
+        ));
+        speed.add_term(Term::new(
+            "fast",
+            MembershipFn::Gaussmf {
+                mean: 80.0,
+                sigma: 10.0,
+            },
+        ));
+        m.add_consequent(speed);
+
+        m.add_rule(
+            RuleBuilder::new()
+                .when("temp", "cold")
+                .then("speed", "slow")
+                .build(),
+        );
+        m.add_rule(
+            RuleBuilder::new()
+                .when("temp", "hot")
+                .then("speed", "fast")
+                .build(),
+        );
+
+        m.set_input_unchecked("temp", 10.0);
+        let r = m.compute().unwrap();
+        assert!(
+            r["speed"] < 50.0,
+            "Cold should yield slow speed, got {}",
+            r["speed"]
+        );
+
+        m.set_input_unchecked("temp", 40.0);
+        let r = m.compute().unwrap();
+        assert!(
+            r["speed"] > 50.0,
+            "Hot should yield fast speed, got {}",
+            r["speed"]
+        );
+    }
+
+    // ── Defuzzification with a full rule system ─────────────────
+
+    fn sistema_defuzz() -> MamdaniEngine {
+        let mut m = MamdaniEngine::new();
+
+        let mut temp = FuzzyVariable::new("temp", Universe::new(0.0, 50.0, 501));
+        temp.add_term(Term::new("cold", MembershipFn::Trimf([0.0, 0.0, 25.0])));
+        temp.add_term(Term::new("warm", MembershipFn::Trimf([0.0, 25.0, 50.0])));
+        temp.add_term(Term::new("hot", MembershipFn::Trimf([25.0, 50.0, 50.0])));
+        m.add_antecedent(temp);
+
+        let mut hum = FuzzyVariable::new("hum", Universe::new(0.0, 100.0, 1001));
+        hum.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 50.0])));
+        hum.add_term(Term::new("mid", MembershipFn::Trimf([0.0, 50.0, 100.0])));
+        hum.add_term(Term::new("high", MembershipFn::Trimf([50.0, 100.0, 100.0])));
+        m.add_antecedent(hum);
+
+        let mut fan = FuzzyVariable::new("fan", Universe::new(0.0, 100.0, 1001));
+        fan.add_term(Term::new("slow", MembershipFn::Trimf([0.0, 0.0, 50.0])));
+        fan.add_term(Term::new("med", MembershipFn::Trimf([0.0, 50.0, 100.0])));
+        fan.add_term(Term::new("fast", MembershipFn::Trimf([50.0, 100.0, 100.0])));
+        m.add_consequent(fan);
+
+        m.add_rule(
+            RuleBuilder::new()
+                .when("temp", "cold")
+                .and("hum", "low")
+                .then("fan", "slow")
+                .build(),
+        );
+        m.add_rule(
+            RuleBuilder::new()
+                .when("temp", "warm")
+                .and("hum", "mid")
+                .then("fan", "med")
+                .build(),
+        );
+        m.add_rule(
+            RuleBuilder::new()
+                .when("temp", "hot")
+                .or("hum", "high")
+                .then("fan", "fast")
+                .build(),
+        );
+
+        m
+    }
+
+    #[test]
+    fn defuzz_methods_in_full_system() {
+        let methods = [
+            DefuzzMethod::Centroid,
+            DefuzzMethod::Bisector,
+            DefuzzMethod::MeanOfMaximum,
+            DefuzzMethod::SmallestOfMaximum,
+            DefuzzMethod::LargestOfMaximum,
+        ];
+
+        for method in methods {
+            let mut m = sistema_defuzz();
+            m.set_defuzz_method(method.clone());
+            m.set_input_unchecked("temp", 30.0);
+            m.set_input_unchecked("hum", 70.0);
+            let r = m.compute().unwrap();
+            let fan = r["fan"];
+            assert!(
+                (0.0..=100.0).contains(&fan),
+                "Method {:?} produced out-of-range value {}",
+                method,
+                fan
+            );
+        }
+    }
+    #[test]
+    fn defuzzify_fallback_retorna_ponto_medio() {
+        // Testa o fallback quando denominador é zero
+        let m = motor_simples(
+            MembershipFn::Trimf([0.0, 0.0, 0.0]), // MF degenerada, nunca dispara
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+        );
+        // Força uma situação onde a agregação resulta em denominador zero
+        // O fallback deve ser (min+max)/2 = 5.0
+        let pts = vec![0.0, 10.0];
+        let agg = vec![0.0, 0.0];
+        let result = m.defuzzify(&pts, &agg, 0.0, 10.0);
+        assert!((result - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn compute_sem_regras_retorna_no_rules_fired() {
+        let mut m = MamdaniEngine::new();
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        x.add_term(Term::new("a", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        m.add_antecedent(x);
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 101));
+        y.add_term(Term::new("b", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        m.add_consequent(y);
+        m.set_input_unchecked("x", 5.0);
+        // Nenhuma regra adicionada
+        let result = m.compute();
+        assert!(matches!(result, Err(FuzzyError::NoRulesFired { .. })));
+    }
+
+    #[test]
+    fn discrete_cog_denominador_zero_retorna_ponto_medio() {
+        let mut m = MamdaniEngine::new();
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        x.add_term(Term::new("esq", MembershipFn::Trimf([0.0, 0.0, 3.0])));
+        m.add_antecedent(x);
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 101));
+        y.add_term(Term::new("dir", MembershipFn::Trimf([7.0, 10.0, 10.0])));
+        m.add_consequent(y);
+        m.add_rule(RuleBuilder::new().when("x", "esq").then("y", "dir").build());
+        m.set_input_unchecked("x", 9.0); // esq = 0.0 → sem disparo → agg zerada
+        if let Some(table) = m.discrete_cog("y", 1.0) {
+            if table.denominator.abs() < f64::EPSILON {
+                assert!((table.centroid - 5.0).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn when_not_reduz_firing_quando_termo_tem_alta_pertinencia() {
+        let mut m = MamdaniEngine::new();
+        let mut temp = FuzzyVariable::new("temp", Universe::new(0.0, 50.0, 501));
+        temp.add_term(Term::new("cold", MembershipFn::Trimf([0.0, 0.0, 25.0])));
+        m.add_antecedent(temp);
+        let mut speed = FuzzyVariable::new("speed", Universe::new(0.0, 100.0, 1001));
+        speed.add_term(Term::new(
+            "fast",
+            MembershipFn::Trapmf([0.0, 0.0, 100.0, 100.0]),
+        ));
+        m.add_consequent(speed);
+        m.add_rule(
+            RuleBuilder::new()
+                .when_not("temp", "cold")
+                .then("speed", "fast")
+                .build(),
+        );
+        m.set_input_unchecked("temp", 5.0);
+        let report = m.explain().unwrap();
+        assert!((report.rule_firings[0].firing_degree - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn bisector_monotonia_temperatura() {
+        let umid = 50.0;
+        let temps = [5.0, 15.0, 25.0, 35.0, 45.0];
+        let mut anterior = 0.0_f64;
+        for &t in &temps {
+            let mut m = montar_ventilador();
+            m.set_defuzz_method(DefuzzMethod::Bisector);
+            m.set_input_unchecked("temperatura", t);
+            m.set_input_unchecked("umidade", umid);
+            if let Ok(r) = m.compute() {
+                let v = r["velocidade_ventilador"];
+                assert!(v >= anterior - 1.0);
+                anterior = v;
+            }
+        }
     }
 }

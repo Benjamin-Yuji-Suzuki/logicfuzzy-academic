@@ -104,6 +104,17 @@ impl Expression {
                 .fold(f64::NEG_INFINITY, f64::max),
         }
     }
+
+    /// Collects all leaf antecedents of the expression tree.
+    /// Used by `validate_rules()` to inspect expression-based rules.
+    pub fn antecedents(&self) -> Vec<&Antecedent> {
+        match self {
+            Expression::Term { antecedent } => vec![antecedent],
+            Expression::And { operands } | Expression::Or { operands } => {
+                operands.iter().flat_map(|op| op.antecedents()).collect()
+            }
+        }
+    }
 }
 
 impl fmt::Display for Expression {
@@ -520,6 +531,22 @@ mod tests {
         assert!(s.contains("AND"));
     }
 
+    #[test]
+    fn expression_antecedents_recursivo() {
+        let expr = Expression::and(vec![
+            Expression::term(Antecedent::new("x", "a")),
+            Expression::or(vec![
+                Expression::term(Antecedent::new("y", "b")),
+                Expression::term(Antecedent::new("z", "c")),
+            ]),
+        ]);
+        let ants = expr.antecedents();
+        assert_eq!(ants.len(), 3);
+        assert!(ants.iter().any(|a| a.var == "x"));
+        assert!(ants.iter().any(|a| a.var == "y"));
+        assert!(ants.iter().any(|a| a.var == "z"));
+    }
+
     // ── Rule with expression ──────────────────────────────────────
 
     #[test]
@@ -885,5 +912,16 @@ mod tests {
             .build();
         assert!(r_and.to_string().contains("AND"));
         assert!(r_or.to_string().contains("OR"));
+    }
+
+    #[test]
+    #[should_panic(expected = "weight must be in [0.0, 1.0]")]
+    fn rule_weight_negativo_panics() {
+        Rule::new(
+            vec![Antecedent::new("x", "a")],
+            Connector::And,
+            vec![("y".to_string(), "b".to_string())],
+        )
+        .with_weight(-0.1);
     }
 }

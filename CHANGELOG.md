@@ -8,6 +8,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Takagi-Sugeno inference model (alternative to Mamdani)
 
 ---
+## [0.1.6] — 2026-05-03
+
+### Fixed
+- `src/engine.rs`: `set_input` now rejects NaN and infinite values (new `InvalidInput` error).
+- `src/engine.rs`: `explain()` now returns `Err(MissingInput)` when crisp inputs are missing, instead of silently using `0.0`.
+- `src/engine.rs`: `validate_rules()` now correctly inspects expression‑based rules via `Expression::antecedents()`.
+- `src/rule.rs`: `RuleBuilder::build()` ensures weight validation panics for negative weights.
+
+### Added
+- `src/error.rs`: new `InvalidInput` variant in `FuzzyError` for non‑finite values.
+- `src/rule.rs`: `Expression::antecedents()` method to collect leaf antecedents from an AST.
+- `src/engine.rs`: new tests for edge cases — NaN/inf rejection, missing input in `explain()`, `validate_rules()` with expressions, empty rule bases, defuzzification fallbacks, denominator‑zero in discrete COG, monotonicity with `Bisector`, `when_not` end‑to‑end, etc.
+- `membership.rs`: tests for open‑shoulder `trimf` intermediate values.
+- `variable.rs`: smoke tests for `to_svg()` output and `Universe::with_resolution` alias.
+
+### Changed
+- `src/error.rs`: updated `Display` for all error variants to provide clearer diagnostics.
+- CI configuration now includes separate `doc‑test` job, `coverage` job with `cargo-llvm-cov` and Codecov upload, and enhanced SVG verification in the `demo` job.
 
 ## [0.1.5] — 2026-05-03
 

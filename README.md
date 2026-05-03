@@ -21,7 +21,7 @@ export_svg!(engine, "output/", aggregated);
 
 ## 📝 AI Audit
 
-* **AI Assistance:** The logic, architecture, and development of this library were built with the assistance of Anthropic's **Claude Pro** and **DeepSeek**. It was used as an advanced pair-programming tool to ensure high-quality, safe, and idiomatic Rust code.
+* **AI Assistance:** The logic, architecture, and development of this library were built with the assistance of **Claude Pro (Anthropic)** and **DeepSeek**. It was used as an advanced pair-programming tool to ensure high-quality, safe, and idiomatic Rust code.
 
 ---
 
@@ -32,21 +32,23 @@ export_svg!(engine, "output/", aggregated);
 - **`rule!` macro** — declarative DSL: `IF x IS NOT cold AND y IS high THEN z IS fast` (up to 5 antecedents)
 - **`fuzzy_var!` / `antecedent!` / `consequent!` macros** — build variables in one block
 - **`var_svg!` / `export_svg!` macros** — SVG export in one call
-- **`RuleBuilder`** — fluent API with `when_not()`, `and_not()`, `also()`, `weight()`
-- **`Expression` AST** — arbitrary nested `AND`/`OR` trees via `Rule::from_expression()` and `RuleBuilder::when_expr()`
+- **`RuleBuilder`** — fluent API with `when_not()`, `and_not()`, `or_not()`, `also()`, `weight()`
+- **`Expression` AST** — arbitrary nested `AND`/`OR` trees via `Rule::from_expression()` and `RuleBuilder::when_expr()`; `Expression::antecedents()` collects all leaf antecedents
 - **AND / OR / NOT connectors** — min (t-norm), max (s-norm), complement
 - **Rule weights** — `rule.with_weight(0.8)` scales firing degree
 - **Multiple consequents** — `THEN fan IS fast AND light IS bright`
 - **`DefuzzMethod`** — `Centroid`, `Bisector`, `MeanOfMaximum`, `SmallestOfMaximum`, `LargestOfMaximum`
-- **`FuzzyError`** — `Result`-based errors: `MissingInput`, `InputOutOfRange`, `NoRulesFired`, `DuplicateVariable`
+- **`FuzzyError`** — `Result`-based errors: `MissingInput`, `InputOutOfRange`, `NoRulesFired`, `DuplicateVariable`, `InvalidInput` (NaN/infinite values rejected)
 - **`try_add_antecedent()` / `try_add_consequent()`** — fallible registration returning `Result`
-- **`validate_rules()`** — checks all rule variables and terms exist before running inference
+- **`antecedent_names()` / `consequent_names()`** — introspect registered variable names
+- **`validate_rules()`** — checks all rule variables and terms exist, including inside `Expression`-based rules
 - **`explain()`** — full pipeline report with fuzzification degrees and rule firing strengths
 - **`discrete_cog()`** — step-by-step Centre-of-Gravity table
 - **SVG visualization** — colour legend, μ annotations, clipped activation areas, aggregated output
 - **`MamdaniEngine: Clone`** — clone the engine to run multiple scenarios without rebuilding
+- **CI with coverage** — separate `doc-test` job, `coverage` job with `cargo-llvm-cov` and Codecov upload
 - **Zero fuzzy dependencies** — only Rust `std`
-- **232 tests** — unit tests + doctests covering the full pipeline
+- **261 unit tests + 3 doctests** — covering the full pipeline
 
 ---
 
@@ -349,7 +351,7 @@ crisp inputs  →  fuzzification  →  inference (AND=min, OR=max, NOT=1-μ)
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
 cargo run --example demo   # two systems + SVG export to output/
-cargo test                 # 232 tests (unit + doctests)
+cargo test                 # 261 tests (unit + doctests)
 ```
 
 ---

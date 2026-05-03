@@ -4,17 +4,15 @@
 //! Equivalent to the skfuzzy module from scikit-fuzzy.
 
 // ─────────────────────────────────────────────
-// Funcoes puras de pertinencia
+// Pure membership functions
 // ─────────────────────────────────────────────
 
 /// Triangular membership function (trimf).
 /// Parameters: `a` (start), `b` (peak), `c` (end). Requires: `a <= b <= c`.
-/// Equivalent to: `skfuzzy.trimf(universe, [a, b, c])`
 pub fn trimf(x: f64, a: f64, b: f64, c: f64) -> f64 {
     assert!(a <= b && b <= c, "trimf: requires a <= b <= c");
 
-    // Ombro esquerdo: a == b (plato aberto a esquerda)
-    // Equivalente ao inicio de um trapmf com a==b
+    // Left open shoulder (a == b)
     if (a - b).abs() < f64::EPSILON {
         if x <= b {
             return 1.0;
@@ -25,8 +23,7 @@ pub fn trimf(x: f64, a: f64, b: f64, c: f64) -> f64 {
         return (c - x) / (c - b);
     }
 
-    // Ombro direito: b == c (plato aberto a direita)
-    // Equivalente ao fim de um trapmf com c==d
+    // Right open shoulder (b == c)
     if (b - c).abs() < f64::EPSILON {
         if x >= b {
             return 1.0;
@@ -37,7 +34,7 @@ pub fn trimf(x: f64, a: f64, b: f64, c: f64) -> f64 {
         return (x - a) / (b - a);
     }
 
-    // Triangulo padrao: a < b < c
+    // Standard triangle: a < b < c
     if x <= a || x >= c {
         return 0.0;
     }
@@ -54,20 +51,16 @@ pub fn trimf(x: f64, a: f64, b: f64, c: f64) -> f64 {
 /// Trapezoidal membership function (trapmf).
 /// Parameters: `a` (rise start), `b` (rise end), `c` (fall start), `d` (fall end).
 /// Requires: `a <= b <= c <= d`.
-/// Open left shoulder: use `a == b`. Open right shoulder: use `c == d`.
-/// Equivalent to: `skfuzzy.trapmf(universe, [a, b, c, d])`
 pub fn trapmf(x: f64, a: f64, b: f64, c: f64, d: f64) -> f64 {
     assert!(
         a <= b && b <= c && c <= d,
         "trapmf: requires a <= b <= c <= d"
     );
 
-    // Plano central: grau maximo
     if x >= b && x <= c {
         return 1.0;
     }
 
-    // Rampa de subida: [a, b)
     if x >= a && x < b {
         if (b - a).abs() < f64::EPSILON {
             return 1.0;
@@ -75,7 +68,6 @@ pub fn trapmf(x: f64, a: f64, b: f64, c: f64, d: f64) -> f64 {
         return (x - a) / (b - a);
     }
 
-    // Rampa de descida: (c, d]
     if x > c && x <= d {
         if (d - c).abs() < f64::EPSILON {
             return 1.0;
@@ -87,28 +79,22 @@ pub fn trapmf(x: f64, a: f64, b: f64, c: f64, d: f64) -> f64 {
 }
 
 /// Gaussian membership function (gaussmf).
-/// Parameters: `mean` (center/peak), `sigma` (width, must be > 0).
-/// Has no abrupt edges — smoothly converges to 0 away from the center.
+/// Parameters: `mean` (center/peak), `sigma` (width, must be > 1e-6 to avoid degeneracy).
 pub fn gaussmf(x: f64, mean: f64, sigma: f64) -> f64 {
-    assert!(sigma > 0.0, "gaussmf: sigma must be > 0");
+    assert!(
+        sigma > 1e-6,
+        "gaussmf: sigma must be > 1e-6 (got {})",
+        sigma
+    );
     let exp = -((x - mean).powi(2)) / (2.0 * sigma.powi(2));
     exp.exp()
 }
 
 // ─────────────────────────────────────────────
-// Enum principal: MembershipFn
+// MembershipFn enum
 // ─────────────────────────────────────────────
 
 /// Enum representing a fuzzy membership function.
-/// Used internally by `Term` to store and evaluate any supported MF type.
-///
-/// # Example
-/// ```
-/// use logicfuzzy_academic::MembershipFn;
-/// let mf = MembershipFn::Trimf([20.0, 50.0, 80.0]);
-/// assert_eq!(mf.eval(50.0), 1.0);
-/// assert!((mf.eval(35.0) - 0.5).abs() < 1e-10);
-/// ```
 #[derive(Debug, Clone)]
 pub enum MembershipFn {
     /// Triangular: [a, b, c]
@@ -130,20 +116,17 @@ impl MembershipFn {
     }
 
     /// Evaluates the membership degree for a slice of points (discrete universe).
-    /// Equivalent to what scikit-fuzzy does with numpy over the universe.
     pub fn eval_universe(&self, points: &[f64]) -> Vec<f64> {
         points.iter().map(|&x| self.eval(x)).collect()
     }
 }
 
 // ─────────────────────────────────────────────
-// Utilitario: interpolar grau em universo discreto
+// Utility: interp_membership
 // ─────────────────────────────────────────────
 
 /// Interpolates the membership degree of `value` given a discrete universe
 /// and its pre-computed membership vector.
-/// Equivalent to `skfuzzy.interp_membership(universe, mf_values, value)`.
-/// Uses linear interpolation between the two closest points.
 pub fn interp_membership(universe: &[f64], memberships: &[f64], value: f64) -> f64 {
     assert_eq!(
         universe.len(),
@@ -183,7 +166,7 @@ pub fn interp_membership(universe: &[f64], memberships: &[f64], value: f64) -> f
 }
 
 // ─────────────────────────────────────────────
-// Testes unitarios
+// Tests
 // ─────────────────────────────────────────────
 
 #[cfg(test)]
@@ -251,6 +234,21 @@ mod tests {
     fn gaussmf_simetria() {
         assert!((gaussmf(40.0, 50.0, 10.0) - gaussmf(60.0, 50.0, 10.0)).abs() < 1e-10);
     }
+    #[test]
+    #[should_panic(expected = "sigma must be > 1e-6")]
+    fn gaussmf_rejects_zero_sigma() {
+        gaussmf(0.0, 0.0, 0.0);
+    }
+    #[test]
+    #[should_panic(expected = "sigma must be > 1e-6")]
+    fn gaussmf_rejects_negative_sigma() {
+        gaussmf(0.0, 0.0, -1.0);
+    }
+    #[test]
+    #[should_panic(expected = "sigma must be > 1e-6")]
+    fn gaussmf_rejects_tiny_sigma() {
+        gaussmf(0.0, 0.0, 1e-300);
+    }
 
     // MembershipFn enum
     #[test]
@@ -295,5 +293,17 @@ mod tests {
         let m = vec![0.5, 0.8];
         assert_eq!(interp_membership(&u, &m, -10.0), 0.5);
         assert_eq!(interp_membership(&u, &m, 200.0), 0.8);
+    }
+
+    #[test]
+    fn trimf_ombro_esquerdo_valor_intermediario() {
+        let resultado = trimf(7.0, 5.0, 5.0, 10.0);
+        assert!((resultado - 0.6).abs() < 1e-10);
+    }
+
+    #[test]
+    fn trimf_ombro_direito_valor_intermediario() {
+        let resultado = trimf(7.0, 0.0, 10.0, 10.0);
+        assert!((resultado - 0.7).abs() < 1e-10);
     }
 }

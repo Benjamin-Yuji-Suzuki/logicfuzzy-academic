@@ -460,7 +460,7 @@ fn main() {
 
     println!();
     divider();
-    println!("  logicfuzzy-academic v0.1.5");
+    println!("  logicfuzzy-academic     ");
     println!("  Pure-Rust Mamdani Fuzzy Inference System");
     println!("  Disciplina: Inteligência Artificial e Computacional — CESUPA");
     divider();
