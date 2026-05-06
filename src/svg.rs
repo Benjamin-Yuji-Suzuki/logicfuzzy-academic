@@ -1151,4 +1151,458 @@ mod tests {
         // The legend title must be visible
         assert!(s.contains("Terms:"), "Legend title missing");
     }
+
+    // --- px / py / fv (mutation in formulae) ---
+    #[test]
+    fn px_precise_intermediate() {
+        let x = px(12.5, 0.0, 50.0);
+        let expected = ML + (12.5 / 50.0) * PW;
+        assert!((x - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn py_precise_intermediate() {
+        let y = py(0.6);
+        let expected = MT + PH - 0.6 * PH;
+        assert!((y - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn fv_near_integer() {
+        assert_eq!(fv(7.0000000001), "7");
+    }
+
+    #[test]
+    fn fv_exact_decimal() {
+        assert_eq!(fv(3.5), "3.5");
+    }
+
+    // --- rect / line / text / circle (exact string validation) ---
+    #[test]
+    fn rect_output_exact() {
+        let mut s = String::new();
+        rect(&mut s, 11.0, 22.0, 33.0, 44.0, 5.0, "#123456", 0.75);
+        assert!(s.contains(
+            r##"<rect x="11.0" y="22.0" width="33.0" height="44.0" rx="5" fill="#123456" fill-opacity="0.75"/>"##
+        ));
+    }
+
+    #[test]
+    fn line_with_dash_exact() {
+        let mut s = String::new();
+        line(&mut s, 1.0, 2.0, 3.0, 4.0, "#fff", 1.5, "2,2");
+        assert!(s.contains(
+            r##"<line x1="1.0" y1="2.0" x2="3.0" y2="4.0" stroke="#fff" stroke-width="1.5" stroke-dasharray="2,2"/>"##
+        ));
+    }
+
+    #[test]
+    fn text_bold_exact() {
+        let mut s = String::new();
+        text(&mut s, 10.0, 20.0, "end", "#000", 14, true, "bold");
+        assert!(s.contains(
+            r##"<text x="10.0" y="20.0" text-anchor="end" fill="#000" font-size="14" font-weight="bold" >bold</text>"##
+        ));
+    }
+
+    #[test]
+    fn circle_exact() {
+        let mut s = String::new();
+        circle(&mut s, 5.0, 6.0, 2.5, "#abc");
+        assert!(s.contains(r##"<circle cx="5.0" cy="6.0" r="2.5" fill="#abc"/>"##));
+    }
+
+    // --- sample_curve (extremes and plateau) ---
+    #[test]
+    fn sample_curve_trapmf_flat() {
+        let mf = MembershipFn::Trapmf([2.0, 4.0, 6.0, 8.0]);
+        let pts = sample_curve(&mf, 0.0, 10.0);
+        // Middle of plateau (x=5) -> value 1.0
+        let mid = pts[SAMPLES / 2];
+        assert!((mid.1 - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn sample_curve_gaussmf_peak() {
+        let mf = MembershipFn::Gaussmf {
+            mean: 5.0,
+            sigma: 1.0,
+        };
+        let pts = sample_curve(&mf, 0.0, 10.0);
+        let max = pts.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+        assert!((max - 1.0).abs() < 0.01);
+    }
+
+    // --- polyline_pts / filled_poly / clipped_poly ---
+    #[test]
+    fn polyline_pts_exact() {
+        let pts = vec![(0.0, 0.0), (10.0, 1.0)];
+        let s = polyline_pts(&pts, 0.0, 10.0);
+        let expected = format!(
+            "{:.1},{:.1} {:.1},{:.1}",
+            px(0.0, 0.0, 10.0),
+            py(0.0),
+            px(10.0, 0.0, 10.0),
+            py(1.0)
+        );
+        assert_eq!(s, expected);
+    }
+
+    #[test]
+    fn filled_poly_edges() {
+        let pts = vec![(2.0, 0.2), (8.0, 0.8)];
+        let poly = filled_poly(&pts, 0.0, 10.0);
+        // Starts at bottom-left corner
+        assert!(poly.starts_with(&format!("{:.1},{:.1}", px(2.0, 0.0, 10.0), py(0.0))));
+        // Ends at bottom-right corner
+        assert!(poly.ends_with(&format!("{:.1},{:.1}", px(8.0, 0.0, 10.0), py(0.0))));
+    }
+
+    #[test]
+    fn clipped_poly_clips_correctly() {
+        let pts = vec![(0.0, 0.0), (5.0, 1.0), (10.0, 0.0)];
+        let poly = clipped_poly(&pts, 0.3, 0.0, 10.0);
+        // Center point should be truncated at y = py(0.3)
+        let expected_y = py(0.3);
+        assert!(poly.contains(&format!("{:.1},{:.1}", px(5.0, 0.0, 10.0), expected_y)));
+    }
+
+    // --- draw_intersection (zero branch / label offset) ---
+    #[test]
+    fn draw_intersection_nonzero_has_dash() {
+        let mut s = String::new();
+        draw_intersection(&mut s, 5.0, 0.5, 0.0, 10.0, "#fff", "test", 0.0);
+        assert!(s.contains("stroke-dasharray"), "Dashed line should exist");
+    }
+
+    #[test]
+    fn draw_intersection_zero_no_dash() {
+        let mut s = String::new();
+        draw_intersection(&mut s, 5.0, 0.0, 0.0, 10.0, "#fff", "zero", 0.0);
+        assert!(
+            !s.contains("stroke-dasharray"),
+            "Zero degree should not have a dashed line"
+        );
+    }
+
+    #[test]
+    fn draw_intersection_label_exists() {
+        let mut s = String::new();
+        draw_intersection(&mut s, 3.0, 0.7, 0.0, 10.0, "#0ff", "abc", 0.0);
+        // Label text should be present
+        assert!(s.contains("abc"), "Term label not found");
+    }
+
+    #[test]
+    fn aggregated_svg_centroid_vertical_line_y_range() {
+        let mut var = FuzzyVariable::new("out", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("a", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let centroid = 6.0;
+        let svg = render_aggregated_svg(&var, &[("a", 0.5)], centroid);
+        assert!(svg.contains(&format!("y1=\"{:.1}\"", MT)));
+        assert!(svg.contains(&format!("y2=\"{:.1}\"", MT + PH)));
+    }
+
+    // --- draw_grid_axes (fixed coordinates susceptible to mutation) ---
+    /// Checks basic presence of horizontal and vertical lines at plot boundaries.
+    #[test]
+    fn grid_axes_exact_coords() {
+        let var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        let mut s = String::new();
+        draw_grid_axes(&mut s, &var);
+
+        // Top horizontal line (y = MT) is drawn, search for its y coordinates
+        let top_y = format!("y1=\"{:.1}\"", MT);
+        assert!(s.contains(&top_y), "Top horizontal line y1 not found");
+
+        // Leftmost vertical line (x = ML)
+        let left_x = format!("x1=\"{:.1}\"", ML);
+        assert!(s.contains(&left_x), "Left vertical line x1 not found");
+
+        // Plot border rect
+        let border = format!(
+            r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="none" stroke="{}" stroke-width="1"/>"##,
+            ML, MT, PW, PH, OVERLAY
+        );
+        assert!(s.contains(&border), "Plot border rect missing");
+    }
+
+    // --- draw_legend (calculated positions) ---
+    /// Checks the first term's colored square and its label.
+    #[test]
+    fn legend_exact_positions() {
+        let mut var = FuzzyVariable::new("t", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("A", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        var.add_term(Term::new("B", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let mut s = String::new();
+        draw_legend(&mut s, &var);
+
+        let title_w = 84.0;
+        let start_x = ML + title_w;
+        // colored square of the first term (x = start_x, y = ly + 14 - 8 = ly + 6)
+        // ly = MT + PH + MB - 4  =>  y_square = MT + PH + MB + 2
+        let expected_y = MT + PH + MB + 2.0;
+        assert!(
+            s.contains(&format!(
+                "x=\"{:.1}\" y=\"{:.1}\" width=\"10\" height=\"10\"",
+                start_x, expected_y
+            )),
+            "First legend square not at expected position"
+        );
+
+        // label of the first term (x = start_x + 14)
+        assert!(
+            s.contains(&format!("x=\"{:.1}\"", start_x + 14.0)) && s.contains(">A<"),
+            "First term label missing or misplaced"
+        );
+    }
+
+    // --- render_aggregated_svg: aggregated envelope -- use a guaranteed point ---
+    /// Verifies the aggregated polygon contains the bottom-left corner,
+    /// which is independent of sampling.
+    #[test]
+    fn aggregated_svg_envelope_has_corner_point() {
+        let mut var = FuzzyVariable::new("out", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("low", MembershipFn::Trimf([0.0, 2.0, 4.0])));
+        var.add_term(Term::new("high", MembershipFn::Trimf([6.0, 8.0, 10.0])));
+        let svg = render_aggregated_svg(&var, &[("low", 1.0), ("high", 0.5)], 5.0);
+        // bottom-left corner of aggregated filled polygon: (px(0,0,10), py(0))
+        let xp = px(0.0, 0.0, 10.0);
+        let yp = py(0.0);
+        assert!(
+            svg.contains(&format!("{:.1},{:.1}", xp, yp)),
+            "Aggregated envelope should include its bottom-left corner"
+        );
+    }
+
+    // --- render_variable_svg: clipped fill -- use a corner point ---
+    /// Clipped polygon must contain the bottom-left corner of the plot area.
+    #[test]
+    fn variable_svg_clipped_polygon_has_corner_point() {
+        let mut var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("tri", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let svg = render_variable_svg(&var, Some(2.0)); // μ(2)=0.4
+                                                        // bottom-left of the clipped fill polygon = (px(0), py(0))
+        let xp = px(0.0, 0.0, 10.0);
+        let yp = py(0.0);
+        assert!(
+            svg.contains(&format!("{:.1},{:.1}", xp, yp)),
+            "Clipped polygon should contain the plot bottom-left corner"
+        );
+    }
+
+    /// Verifies that when multiple intersections exist,
+    /// highlight rectangles appear at distinct x positions
+    /// (some on the right, some flipped to the left).
+    #[test]
+    fn variable_svg_multiple_intersections_distinct_x() {
+        let mut var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        // short, medium, long labels → different widths
+        var.add_term(Term::new("x", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        var.add_term(Term::new("yy", MembershipFn::Trimf([2.0, 5.0, 8.0])));
+        var.add_term(Term::new("zzz", MembershipFn::Trimf([4.0, 7.0, 10.0])));
+        // input near the right edge forces “zzz” to flip left
+        let svg = render_variable_svg(&var, Some(9.5));
+
+        // Collect x values from all highlight rectangles
+        let mut x_vals = Vec::new();
+        let mut search_from = 0;
+        loop {
+            let remaining = &svg[search_from..];
+            let rect_start = remaining.find("<rect ");
+            if rect_start.is_none() {
+                break;
+            }
+            let rect_start = search_from + rect_start.unwrap();
+            let rect_end = svg[rect_start..].find("/>").map(|p| rect_start + p + 2);
+            if rect_end.is_none() {
+                break;
+            }
+            let rect_end = rect_end.unwrap();
+            let rect_str = &svg[rect_start..rect_end];
+
+            // Select only the label background rectangles
+            if rect_str.contains("fill=\"#1e1e2e\"") && rect_str.contains("fill-opacity=\"0.90\"") {
+                if let Some(x_pos) = rect_str.find("x=\"") {
+                    let after = &rect_str[x_pos + 3..];
+                    if let Some(quote) = after.find('"') {
+                        if let Ok(x) = after[..quote].parse::<f64>() {
+                            x_vals.push(x);
+                        }
+                    }
+                }
+            }
+
+            search_from = rect_end;
+            if search_from >= svg.len() {
+                break;
+            }
+        }
+
+        assert!(
+            x_vals.len() >= 2,
+            "Expected at least 2 highlight rectangles, found {}",
+            x_vals.len()
+        );
+
+        let unique_x: std::collections::BTreeSet<i64> =
+            x_vals.iter().map(|&x| (x * 10.0) as i64).collect();
+        assert!(
+            unique_x.len() >= 2,
+            "Highlight rectangles should have at least two distinct x positions, got: {:?}",
+            unique_x
+        );
+    }
+
+    // ─── constant values (protects W, H, ML, etc.) ──────────────
+    #[test]
+    fn constants_fixed_values() {
+        assert_eq!(W, 660.0);
+        assert_eq!(H, 380.0);
+        assert_eq!(ML, 62.0);
+        assert_eq!(MR, 20.0);
+        assert_eq!(MT, 48.0);
+        assert_eq!(MB, 56.0);
+        assert_eq!(LEG, 36.0);
+        assert_eq!(PW, W - ML - MR);
+        assert_eq!(PH, H - MT - MB - LEG);
+        assert_eq!(SAMPLES, 500);
+    }
+
+    // ─── fv boundary values ─────────────────────────────────────
+    #[test]
+    fn fv_at_boundary_less_than_10000() {
+        // 10000.0 with < should be "10000" (abs < 10000 false → decimal)
+        assert_eq!(fv(10000.0), "10000.0");
+    }
+
+    #[test]
+    fn fv_at_exact_diff_1e9() {
+        // diff exactly 1e-9: < is false, <= would be true
+        let v = 3.0 + 1e-9;
+        assert_eq!(fv(v), "3.0"); // currently rounds to decimal
+    }
+
+    // ─── px / py with hardcoded expected values ─────────────────
+    #[test]
+    fn px_hardcoded_min() {
+        // px(min) = ML
+        assert!((px(0.0, 0.0, 10.0) - 62.0).abs() < 0.1);
+    }
+    #[test]
+    fn px_hardcoded_mid() {
+        // px(5,0,10) = 62 + (5-0)/(10-0)*578 = 62 + 0.5*578 = 351
+        let val = px(5.0, 0.0, 10.0);
+        assert!((val - 351.0).abs() < 0.1);
+    }
+    #[test]
+    fn px_hardcoded_max() {
+        let val = px(10.0, 0.0, 10.0);
+        assert!((val - (ML + PW)).abs() < 0.1);
+    }
+
+    #[test]
+    fn py_hardcoded_zero() {
+        // py(0) = MT + PH
+        let val = py(0.0);
+        assert!((val - (MT + PH)).abs() < 0.1);
+    }
+    #[test]
+    fn py_hardcoded_one() {
+        let val = py(1.0);
+        assert!((val - MT).abs() < 0.1);
+    }
+
+    // ─── draw_grid_axes: exact literal strings ──────────────────
+    #[test]
+    fn grid_axes_literal_left_edge() {
+        let var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        let mut s = String::new();
+        draw_grid_axes(&mut s, &var);
+        // vertical line at x = ML = 62.0
+        assert!(s.contains("x1=\"62.0\""));
+        assert!(s.contains("x2=\"62.0\""));
+    }
+
+    #[test]
+    fn grid_axes_literal_right_edge() {
+        let var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        let mut s = String::new();
+        draw_grid_axes(&mut s, &var);
+        // vertical line at x = ML+PW = 62+578 = 640.0
+        assert!(s.contains("x1=\"640.0\""));
+        assert!(s.contains("x2=\"640.0\""));
+    }
+
+    #[test]
+    fn grid_axes_literal_top_line() {
+        let var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        let mut s = String::new();
+        draw_grid_axes(&mut s, &var);
+        // horizontal line at d=1.0 → y = MT = 48.0
+        assert!(s.contains("y1=\"48.0\""));
+        assert!(s.contains("y2=\"48.0\""));
+    }
+
+    // ─── draw_legend: literal expected positions ────────────────
+    #[test]
+    fn legend_first_square_literal_x() {
+        let mut var = FuzzyVariable::new("t", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("A", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let mut s = String::new();
+        draw_legend(&mut s, &var);
+        // first square x = ML + 84 = 146
+        assert!(s.contains("x=\"146.0\""));
+    }
+    #[test]
+    fn legend_first_label_literal_x() {
+        let mut var = FuzzyVariable::new("t", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("A", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let mut s = String::new();
+        draw_legend(&mut s, &var);
+        // label x = 146 + 14 = 160
+        assert!(s.contains("x=\"160.0\""));
+    }
+
+    // ─── draw_intersection: exact literal coordinates ────────────
+    #[test]
+    fn draw_intersection_literal_dot_position() {
+        let mut s = String::new();
+        draw_intersection(&mut s, 5.0, 0.5, 0.0, 10.0, "#fff", "test", 0.0);
+        // xp for 5.0 in [0,10] => 62 + 0.5*578 = 351
+        assert!(s.contains("cx=\"351.0\""));
+        // y for degree 0.5 = MT + PH - 0.5*PH = 48 + 240 - 120 = 168
+        assert!(s.contains("cy=\"168.0\""));
+    }
+
+    #[test]
+    fn draw_intersection_label_rect_literal() {
+        let mut s = String::new();
+        // offset_y 0 → ly = yp - 9 = 168 - 9 = 159, but clamped to MT-2 = 46
+        draw_intersection(&mut s, 5.0, 0.5, 0.0, 10.0, "#fff", "test", 0.0);
+        // width = 4*6.8+10 = 37.2, xp=351 → lx = 351+6=357, y clamped to 46
+        assert!(s.contains("x=\"357.0\""));
+        assert!(s.contains("y=\"46.0\""));
+        assert!(s.contains("width=\"37.2\""));
+    }
+
+    // ─── render_variable_svg / render_aggregated_svg literal checks ──
+    #[test]
+    fn variable_svg_clipped_fill_literal_coord() {
+        let mut var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("tri", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let svg = render_variable_svg(&var, Some(2.0));
+        // The clipped polygon must contain the bottom-left corner (62.0, 288.0)
+        assert!(svg.contains("62.0,288.0"));
+    }
+
+    #[test]
+    fn aggregated_svg_centroid_line_literal() {
+        let mut var = FuzzyVariable::new("out", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("a", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let centroid = 5.0;
+        let svg = render_aggregated_svg(&var, &[("a", 0.5)], centroid);
+        // centroid at x = 62 + (5-0)/10*578 = 351
+        assert!(svg.contains("x1=\"351.0\""));
+    }
 }
