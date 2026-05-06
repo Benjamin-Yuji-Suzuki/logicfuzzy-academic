@@ -1213,7 +1213,7 @@ mod tests {
 
     #[test]
     fn firing_strength_weight_near_zero_must_be_tiny() {
-        let (inputs, vars) = make_vars();            // mu_cold = 0.8
+        let (inputs, vars) = make_vars(); // mu_cold = 0.8
         let r = Rule::new(
             vec![Antecedent::new("temperature", "cold")],
             Connector::And,
@@ -1222,8 +1222,12 @@ mod tests {
         .with_weight(0.001);
         let alpha = r.firing_strength(&inputs, &vars);
         // Com weight 0.001, alpha = 0.8 * 0.001 = 0.0008
-        assert!(alpha < 0.01, "Tiny weight must give tiny firing, got {}", alpha);
-        assert!(alpha > 0.0,  "Tiny weight must not be zero, got {}", alpha);
+        assert!(
+            alpha < 0.01,
+            "Tiny weight must give tiny firing, got {}",
+            alpha
+        );
+        assert!(alpha > 0.0, "Tiny weight must not be zero, got {}", alpha);
     }
 
     /// Kill * -> / mutant in firing_strength.
@@ -1240,8 +1244,10 @@ mod tests {
         .with_weight(0.5);
         let fs = rule.firing_strength(&inputs, &vars);
         // 0.8 * 0.5 = 0.4 (clamped stays 0.4)
-        assert!((fs - 0.4).abs() < 1e-9,
-            "Expected firing 0.4 with weight=0.5, got {}", fs);
+        assert!(
+            (fs - 0.4).abs() < 1e-9,
+            "Expected firing 0.4 with weight=0.5, got {}",
+            fs
+        );
     }
-
 }

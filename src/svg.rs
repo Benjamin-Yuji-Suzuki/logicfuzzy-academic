@@ -1143,10 +1143,12 @@ mod tests {
         let title_w = 84.0;
         let start_x = ML + title_w;
         let expected_rect_x = format!("x=\"{:.1}\"", start_x);
-        assert!(s.contains(&expected_rect_x), "First legend square not at expected x");
+        assert!(
+            s.contains(&expected_rect_x),
+            "First legend square not at expected x"
+        );
 
         // The legend title must be visible
         assert!(s.contains("Terms:"), "Legend title missing");
     }
-
 }

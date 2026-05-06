@@ -453,7 +453,6 @@ mod tests {
         assert_eq!(bar, "[░░░░░░░░░░]");
     }
 
-
     #[test]
     fn cogtable_write_output_contains_expected_values() {
         let table = CogTable {
@@ -492,5 +491,4 @@ mod tests {
         table.print("test_label");
         // If we got here without panic, print did something.
     }
-
 }
