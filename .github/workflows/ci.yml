@@ -100,5 +100,3 @@ jobs:
           args: >
             -Dsonar.organization=${{ secrets.SONAR_ORG }}
             -Dsonar.projectKey=Benjamin-Yuji-Suzuki_logicfuzzy-academic
-            -Dsonar.rust.lcov.reportPaths=lcov.info
-            -Dsonar.rust.clippy.disable=true
