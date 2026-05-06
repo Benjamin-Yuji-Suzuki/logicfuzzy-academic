@@ -83,6 +83,7 @@ jobs:
         run: |
           test -s output/gorjeta/tip_aggregated.svg
           test -s output/irrigacao/valve_aggregated.svg
+
   sonarcloud:
     name: SonarCloud Analysis
     needs: coverage
@@ -97,10 +98,11 @@ jobs:
           name: coverage
           path: .
       - name: SonarCloud Scan
-        uses: sonarsource/sonarqube-scan-action@v5
+        uses: sonarsource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             -Dsonar.organization=${{ secrets.SONAR_ORG }}
             -Dsonar.projectKey=Benjamin-Yuji-Suzuki_logicfuzzy-academic
+            -Dsonar.coverageReportPaths=cobertura.xml
