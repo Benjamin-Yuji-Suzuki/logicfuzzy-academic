@@ -18,43 +18,47 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-mutants
+      - name: Install cargo‑mutants
         run: cargo install cargo-mutants
 
       - name: Run cargo mutants and parse results
         id: parse
+        # O segredo: desligar temporariamente o "set -e" para o parsing não matar o job
+        shell: bash
         run: |
           set -euo pipefail
           cargo mutants --timeout 60 2>&1 | tee mutants.log
 
-          # Linha de resumo (protegida contra falha)
+          # A partir daqui, queremos extrair os números sem quebrar o job
+          set +e
           SUMMARY=$(grep 'mutants tested in' mutants.log | tail -1 || true)
+          MISSED=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="missed") print $(i-1)}' || echo 0)
+          CAUGHT=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="caught") print $(i-1)}' || echo 0)
+          UNVIABLE=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="unviable") print $(i-1)}' || echo 0)
+          set -e
 
-          # Usa awk para extrair os números — portável, sem regex Perl
-          MISSED=$(echo "$SUMMARY"  | awk '{for(i=1;i<=NF;i++) if($i=="missed")  print $(i-1)}')
-          CAUGHT=$(echo "$SUMMARY"  | awk '{for(i=1;i<=NF;i++) if($i=="caught")  print $(i-1)}')
-          UNVIABLE=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="unviable") print $(i-1)}')
-
-          # Fallback para zero se vazio
           MISSED=${MISSED:-0}
           CAUGHT=${CAUGHT:-0}
           UNVIABLE=${UNVIABLE:-0}
 
           TOTAL=$((MISSED + CAUGHT + UNVIABLE))
-          if [ "$TOTAL" -eq 0 ]; then
-            PERCENT="0.0"
-          else
-            PERCENT=$(echo "scale=1; 100 * $CAUGHT / $TOTAL" | bc)
+          PERCENT="0.0"
+          if [ "$TOTAL" -gt 0 ]; then
+            PERCENT=$(echo "scale=1; 100 * $CAUGHT / $TOTAL" | bc || echo "0.0")
           fi
 
-          echo "caught=$CAUGHT"   >> $GITHUB_OUTPUT
+          echo "caught=$CAUGHT" >> $GITHUB_OUTPUT
           echo "percent=$PERCENT" >> $GITHUB_OUTPUT
           echo "## Mutation score: ${PERCENT}% (${CAUGHT} caught out of ${TOTAL})" >> $GITHUB_STEP_SUMMARY
 
-          if   (( $(echo "$PERCENT >= 80" | bc -l) )); then COLOR="brightgreen"
-          elif (( $(echo "$PERCENT >= 60" | bc -l) )); then COLOR="green"
-          elif (( $(echo "$PERCENT >= 40" | bc -l) )); then COLOR="yellow"
-          else COLOR="red"
+          if (( $(echo "$PERCENT >= 80" | bc -l) )); then
+            COLOR="brightgreen"
+          elif (( $(echo "$PERCENT >= 60" | bc -l) )); then
+            COLOR="green"
+          elif (( $(echo "$PERCENT >= 40" | bc -l) )); then
+            COLOR="yellow"
+          else
+            COLOR="red"
           fi
 
           cat > mutation.json <<EOF
@@ -67,12 +71,12 @@ jobs:
           }
           EOF
 
-      - name: Deploy badge to mutation-badge branch
+      - name: Deploy badge to mutation‑badge branch
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
-          git branch -D mutation-badge 2>/dev/null || true
-          git push origin --delete mutation-badge 2>/dev/null || true
+          git branch -D mutation-badge || true
+          git push origin --delete mutation-badge || true
           git checkout --orphan mutation-badge
           git rm -rf . || true
           cp mutation.json /tmp/mutation.json
