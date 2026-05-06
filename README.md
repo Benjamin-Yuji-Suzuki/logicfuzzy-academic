@@ -6,11 +6,7 @@
 [![codecov](https://codecov.io/github/Benjamin-Yuji-Suzuki/logicfuzzy-academic/graph/badge.svg?token=EW9I24MLI4)](https://codecov.io/github/Benjamin-Yuji-Suzuki/logicfuzzy-academic)
 ![Mutation Testing](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic/mutation-badge/mutation.json)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Benjamin-Yuji-Suzuki_logicfuzzy-academic&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Benjamin-Yuji-Suzuki_logicfuzzy-academic)
-<<<<<<< HEAD
-
-=======
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Benjamin-Yuji-Suzuki_logicfuzzy-academic&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Benjamin-Yuji-Suzuki_logicfuzzy-academic)
->>>>>>> 3930c58 (docs: update README to v0.1.8 with AI declaration, mutation testing and SonarCloud sections)
 
 ---
 A pure-Rust Mamdani Fuzzy Inference System built from scratch — no external fuzzy crates.  
@@ -62,11 +58,7 @@ For the full declaration of AI usage, see the [AI Usage Declaration](#-ai-usage-
 - **SonarCloud integration** — continuous static analysis covering code smells, duplications, complexity, and vulnerabilities
 - **Comprehensive test suite** — unit, integration, E2E, robustness, and concurrency tests; expanded SVG renderer coverage with exact-coordinate and edge-case assertions
 - **Zero fuzzy dependencies** — only Rust `std`
-<<<<<<< HEAD
-- **391 unit tests + 6 doctests** — covering the full pipeline
-=======
-- **371 unit tests + 6 doctests** — covering the full pipeline
->>>>>>> 3930c58 (docs: update README to v0.1.8 with AI declaration, mutation testing and SonarCloud sections)
+- **374 unit tests + 6 doctests** — covering the full pipeline
 
 ---
 
@@ -373,13 +365,9 @@ crisp inputs  →  fuzzification  →  inference (AND=min, OR=max, NOT=1-μ)
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
 cargo run --example demo   # two systems + SVG export to output/
-<<<<<<< HEAD
-cargo test                 # 391 tests (unit + doctests)
-=======
-cargo test                 # 371 unit tests + 6 doctests
+cargo test                 # 374 unit tests + 6 doctests
 cargo mutants              # mutation testing (full suite)
 cargo mutants -f src/svg.rs --timeout 60   # mutation testing for a specific module
->>>>>>> 3930c58 (docs: update README to v0.1.8 with AI declaration, mutation testing and SonarCloud sections)
 ```
 
 ---
