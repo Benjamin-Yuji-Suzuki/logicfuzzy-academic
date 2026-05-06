@@ -5,8 +5,7 @@
 [![CI](https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic/actions/workflows/ci.yml/badge.svg)](https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/github/Benjamin-Yuji-Suzuki/logicfuzzy-academic/graph/badge.svg?token=EW9I24MLI4)](https://codecov.io/github/Benjamin-Yuji-Suzuki/logicfuzzy-academic)
 ![Mutation Testing](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic/mutation-badge/mutation.json)
-[![SonarQube Cloud](https://sonarcloud.io/images/project_badges/sonarcloud-light.svg)](https://sonarcloud.io/summary/new_code?id=Benjamin-Yuji-Suzuki_logicfuzzy-academic)
-
+[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=Benjamin-Yuji-Suzuki_logicfuzzy-academic)](https://sonarcloud.io/summary/new_code?id=Benjamin-Yuji-Suzuki_logicfuzzy-academic)
 A pure-Rust Mamdani Fuzzy Inference System built from scratch — no external fuzzy crates.  
 Developed as an academic project for the course **Artificial Intelligence and Computation** at CESUPA.
 
