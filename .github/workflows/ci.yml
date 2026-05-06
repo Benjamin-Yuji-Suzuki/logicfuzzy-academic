@@ -63,6 +63,10 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+      - name: Convert lcov to cobertura
+        run: |
+          cargo install lcov-cobertura
+          lcov-cobertura lcov.info --output cobertura.xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -72,8 +76,8 @@ jobs:
       - name: Upload coverage artifact for SonarCloud
         uses: actions/upload-artifact@v4
         with:
-          name: lcov
-          path: lcov.info
+          name: coverage
+          path: cobertura.xml
 
   demo:
     name: Demo
@@ -100,15 +104,14 @@ jobs:
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
         with:
-          name: lcov
+          name: coverage
           path: .
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: sonarsource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             -Dsonar.organization=${{ secrets.SONAR_ORG }}
             -Dsonar.projectKey=Benjamin-Yuji-Suzuki_logicfuzzy-academic
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
