@@ -25,7 +25,7 @@ jobs:
         id: parse
         run: |
           set -euo pipefail
-          cargo mutants 2>&1 | tee mutants.log
+          cargo mutants --timeout-multiplier 4.0 2>&1 | tee mutants.log
           SUMMARY=$(grep 'mutants tested in' mutants.log | tail -1)
           # Extrai números da linha “711 mutants tested in 8m: 232 missed, 461 caught, 18 unviable”
           MISSED=$(echo "$SUMMARY" | grep -oP '\d+(?= missed)')
