@@ -25,26 +25,27 @@ jobs:
         id: parse
         run: |
           set -euo pipefail
-          # 2 jobs paralelos → seguro para memória
-          # timeout de 60s para cada mutante
           cargo mutants --jobs 2 --timeout 60 2>&1 | tee mutants.log
 
-          # Extração segura: se grep não achar nada, assume 0
+          # Pega a linha de resumo (segura, com fallback)
           SUMMARY=$(grep 'mutants tested in' mutants.log | tail -1 || true)
+          # Extrai os números (com fallback para 0)
           MISSED=$(echo "$SUMMARY" | grep -oP '\d+(?= missed)' || echo 0)
           CAUGHT=$(echo "$SUMMARY" | grep -oP '\d+(?= caught)' || echo 0)
           UNVIABLE=$(echo "$SUMMARY" | grep -oP '\d+(?= unviable)' || echo 0)
+          # Garante que CAUGHT não seja string vazia
+          CAUGHT=${CAUGHT:-0}
           TOTAL=$((MISSED + CAUGHT + UNVIABLE))
           if [ "$TOTAL" -eq 0 ]; then
             PERCENT="0.0"
           else
-            PERCENT=$(echo "scale=1; 100 * $CAUGHT / $TOTAL" | bc)
+            PERCENT=$(echo "scale=1; 100 * $CAUGHT / $TOTAL" | bc || echo "0.0")
           fi
+
           echo "caught=$CAUGHT" >> $GITHUB_OUTPUT
           echo "percent=$PERCENT" >> $GITHUB_OUTPUT
           echo "## Mutation score: ${PERCENT}% (${CAUGHT} caught out of ${TOTAL})" >> $GITHUB_STEP_SUMMARY
 
-          # Cor do badge
           if (( $(echo "$PERCENT >= 80" | bc -l) )); then
             COLOR="brightgreen"
           elif (( $(echo "$PERCENT >= 60" | bc -l) )); then
@@ -74,6 +75,7 @@ jobs:
           git push origin --delete mutation-badge || true
           git checkout --orphan mutation-badge
           git rm -rf . || true
+          cp mutation.json /tmp/mutation.json
           cp /tmp/mutation.json ./mutation.json
           git add mutation.json
           git commit -m "Update mutation score [skip ci]"
