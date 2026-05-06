@@ -1,15 +1,12 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
-
 jobs:
   test:
     name: Test
@@ -19,7 +16,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
-
   doc-test:
     name: Doc‑tests
     runs-on: ubuntu-latest
@@ -28,7 +24,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --doc
-
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -39,7 +34,6 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-features -- -D warnings
-
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
@@ -49,7 +43,6 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
-
   coverage:
     name: Coverage (llvm-cov + Codecov)
     runs-on: ubuntu-latest
@@ -65,8 +58,8 @@ jobs:
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
       - name: Convert lcov to cobertura
         run: |
-          cargo install lcov2cobertura
-          lcov2cobertura lcov.info -o cobertura.xml
+          pip install lcov_cobertura
+          python3 -c "from lcov_cobertura import LcovCobertura; open('cobertura.xml','w').write(LcovCobertura(open('lcov.info').read()).convert())"
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -78,7 +71,6 @@ jobs:
         with:
           name: coverage
           path: cobertura.xml
-
   demo:
     name: Demo
     runs-on: ubuntu-latest
@@ -91,7 +83,6 @@ jobs:
         run: |
           test -s output/gorjeta/tip_aggregated.svg
           test -s output/irrigacao/valve_aggregated.svg
-
   sonarcloud:
     name: SonarCloud Analysis
     needs: coverage
@@ -99,14 +90,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Shallow clones are disabled for better relevancy of analysis
-
+          fetch-depth: 0
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
         with:
           name: coverage
           path: .
-
       - name: SonarCloud Scan
         uses: sonarsource/sonarqube-scan-action@v5
         env:
