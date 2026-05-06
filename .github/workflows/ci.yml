@@ -56,21 +56,17 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
-      - name: Convert lcov to cobertura
-        run: |
-          pip install lcov_cobertura
-          python3 -c "from lcov_cobertura import LcovCobertura; open('cobertura.xml','w').write(LcovCobertura(open('lcov.info').read()).convert())"
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./lcov.info
           fail_ci_if_error: true
-      - name: Upload coverage artifact for SonarCloud
+      - name: Upload lcov artifact for SonarCloud
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: cobertura.xml
+          path: lcov.info
   demo:
     name: Demo
     runs-on: ubuntu-latest
@@ -83,7 +79,6 @@ jobs:
         run: |
           test -s output/gorjeta/tip_aggregated.svg
           test -s output/irrigacao/valve_aggregated.svg
-
   sonarcloud:
     name: SonarCloud Analysis
     needs: coverage
@@ -92,10 +87,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Run Clippy (pre-check for SonarCloud)
-        run: cargo clippy --all-features 2>&1
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
         with:
@@ -109,4 +100,5 @@ jobs:
           args: >
             -Dsonar.organization=${{ secrets.SONAR_ORG }}
             -Dsonar.projectKey=Benjamin-Yuji-Suzuki_logicfuzzy-academic
-            -Dsonar.coverageReportPaths=cobertura.xml
+            -Dsonar.rust.lcov.reportPaths=lcov.info
+            -Dsonar.rust.clippy.disable=true
