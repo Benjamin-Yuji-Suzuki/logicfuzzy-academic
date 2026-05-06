@@ -9,19 +9,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [0.1.8] — Unreleased
-
+## [0.1.8] — 2026-05-06
 ### Added
+- **Mutation testing** with `cargo-mutants` and CI workflow (`mutation.yml`):
+  - 716 mutants tested, detection rate of ~72.6% (520 caught, 178 missed, 18 unviable).
+  - Dynamic badge deployed to `mutation-badge` branch via shields.io.
+- **SonarCloud** integration in CI for code quality and coverage analysis.
 - Integration tests (`tests/integration_tests.rs`):
-  - Full tip system with multiple scenarios (regression safety net).
-  - Consistency check between `compute()` and `explain()` outputs.
-  - `NoRulesFired` error handling for input outside term support.
+  - Full tip system with multiple scenarios.
+  - Consistency between `compute()` and `explain()`.
+  - `NoRulesFired` error handling.
   - Weighted rule firing verification.
-  - Discrete COG centroid accuracy test.
+  - Discrete COG centroid accuracy.
 - End‑to‑end test (`tests/e2e_tests.rs`):
   - Simulates a complete irrigation control system from construction to SVG export.
   - Validates SVG generation (aggregated output, membership plots with input marker).
-  - Ensures fuzzy pipeline output is within expected bounds for a known scenario.
+  - Ensures fuzzy pipeline output stays within expected bounds.
+- Concurrency test (`tests/concurrency_tests.rs`): verifies `MamdaniEngine: Clone` can be used across threads.
+- **`svg.rs` — comprehensive test suite**: exact coordinate validation, boundary conditions,
+  literal assertions for `px`, `py`, `fv`, `draw_grid_axes`, `draw_legend`,
+  `draw_intersection`, `sample_curve`, `render_variable_svg`, `render_aggregated_svg`,
+  and multiple intersection label placement.
+- Complete SVG tests with hardcoded numeric results to kill arithmetic and comparison mutants.
+
+### Fixed
+- **`discrete_cog`**: replaced `while` loop with deterministic `for` loop to prevent
+  infinite loops caused by `+=` → `-=` mutation in `cargo-mutants`.
+- **`mutation.yml`**: stabilized CI workflow by using `shell: bash {0}` and
+  `grep`/`sed` for robust log parsing.
+- **`svg.rs` legend positioning** and **draw_intersection coordinate clamping** adjusted to match actual SVG output.
+
+### Changed
+- Test count increased from 274 to 391 (unit tests only).
+- Mutation score badge now live at
+  `https://img.shields.io/endpoint?url=…/mutation-badge/mutation.json`.
 
 ## [0.1.7] — 2026-05-03
 
