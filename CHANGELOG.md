@@ -9,6 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.8] — Unreleased
+
+### Added
+- Integration tests (`tests/integration_tests.rs`):
+  - Full tip system with multiple scenarios (regression safety net).
+  - Consistency check between `compute()` and `explain()` outputs.
+  - `NoRulesFired` error handling for input outside term support.
+  - Weighted rule firing verification.
+  - Discrete COG centroid accuracy test.
+- End‑to‑end test (`tests/e2e_tests.rs`):
+  - Simulates a complete irrigation control system from construction to SVG export.
+  - Validates SVG generation (aggregated output, membership plots with input marker).
+  - Ensures fuzzy pipeline output is within expected bounds for a known scenario.
+
 ## [0.1.7] — 2026-05-03
 
 ### Fixed

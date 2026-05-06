@@ -1,0 +1,72 @@
+name: Mutation Testing
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write          # necessário para fazer push no branch mutation‑badge
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo‑mutants
+        run: cargo install cargo-mutants
+
+      - name: Run cargo mutants and parse results
+        id: parse
+        run: |
+          set -euo pipefail
+          cargo mutants 2>&1 | tee mutants.log
+          SUMMARY=$(grep 'mutants tested in' mutants.log | tail -1)
+          # Extrai números da linha “711 mutants tested in 8m: 232 missed, 461 caught, 18 unviable”
+          MISSED=$(echo "$SUMMARY" | grep -oP '\d+(?= missed)')
+          CAUGHT=$(echo "$SUMMARY" | grep -oP '\d+(?= caught)')
+          UNVIABLE=$(echo "$SUMMARY" | grep -oP '\d+(?= unviable)')
+          TOTAL=$((MISSED + CAUGHT + UNVIABLE))
+          PERCENT=$(echo "scale=1; 100 * $CAUGHT / $TOTAL" | bc)
+          echo "caught=$CAUGHT" >> $GITHUB_OUTPUT
+          echo "percent=$PERCENT" >> $GITHUB_OUTPUT
+          echo "## Mutation score: ${PERCENT}% (${CAUGHT} caught out of ${TOTAL})" >> $GITHUB_STEP_SUMMARY
+
+          # Define a cor do badge com base no percentual
+          if (( $(echo "$PERCENT >= 80" | bc -l) )); then
+            COLOR="brightgreen"
+          elif (( $(echo "$PERCENT >= 60" | bc -l) )); then
+            COLOR="green"
+          elif (( $(echo "$PERCENT >= 40" | bc -l) )); then
+            COLOR="yellow"
+          else
+            COLOR="red"
+          fi
+
+          # Gera o JSON compatível com shields.io/endpoint
+          cat > mutation.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "mutation testing",
+            "message": "${PERCENT}% killed",
+            "color": "${COLOR}",
+            "namedLogo": "rust"
+          }
+          EOF
+
+      - name: Deploy to mutation‑badge branch
+        run: |
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          git checkout --orphan mutation-badge
+          git reset
+          cp mutation.json /tmp/mutation.json
+          git checkout main -- .gitignore   # copia o .gitignore do main (opcional)
+          cp /tmp/mutation.json mutation.json
+          git add mutation.json
+          git commit -m "Update mutation score [skip ci]"
+          git push -f origin mutation-badge

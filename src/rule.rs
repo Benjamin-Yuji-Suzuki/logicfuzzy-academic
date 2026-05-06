@@ -1163,4 +1163,85 @@ mod tests {
         let r = Rule::from_expression(expr, vec![("y".to_string(), "b".to_string())]);
         assert!(r.is_expression_based());
     }
+
+    // ── NEW tests to kill rule.rs mutants ─────────────────────
+
+    #[test]
+    fn antecedent_count_more_than_one() {
+        let r = Rule::new(
+            vec![
+                Antecedent::new("temp", "cold"),
+                Antecedent::new("hum", "low"),
+            ],
+            Connector::And,
+            vec![("speed".into(), "slow".into())],
+        );
+        assert_eq!(r.antecedent_count(), 2);
+    }
+
+    #[test]
+    fn weight_boundary_near_one_does_not_show_weight() {
+        // Use a weight exactly 1e-9 away from 1.0 so that
+        // (1.0 - w).abs() == 1e-9, which is NOT > 1e-9.
+        let w = 1.0 - 1e-9;
+        let r = Rule::new(
+            vec![Antecedent::new("x", "a")],
+            Connector::And,
+            vec![("y".into(), "b".into())],
+        )
+        .with_weight(w);
+        let s = r.to_string();
+        assert!(
+            !s.contains("[w="),
+            "weight 1.0-1e-9 should not be displayed (difference not > 1e-9)"
+        );
+    }
+
+    #[test]
+    fn firing_strength_with_weight_not_one() {
+        let (inputs, vars) = make_vars();
+        // Use weight 0.3, mu_cold = 0.8 => firing = 0.24
+        let r = Rule::new(
+            vec![Antecedent::new("temperature", "cold")],
+            Connector::And,
+            vec![("y".into(), "b".into())],
+        )
+        .with_weight(0.3);
+        let alpha = r.firing_strength(&inputs, &vars);
+        assert!((alpha - 0.24).abs() < 1e-6);
+    }
+
+    #[test]
+    fn firing_strength_weight_near_zero_must_be_tiny() {
+        let (inputs, vars) = make_vars();            // mu_cold = 0.8
+        let r = Rule::new(
+            vec![Antecedent::new("temperature", "cold")],
+            Connector::And,
+            vec![("y".into(), "b".into())],
+        )
+        .with_weight(0.001);
+        let alpha = r.firing_strength(&inputs, &vars);
+        // Com weight 0.001, alpha = 0.8 * 0.001 = 0.0008
+        assert!(alpha < 0.01, "Tiny weight must give tiny firing, got {}", alpha);
+        assert!(alpha > 0.0,  "Tiny weight must not be zero, got {}", alpha);
+    }
+
+    /// Kill * -> / mutant in firing_strength.
+    /// With weight=0.5 and mu=0.8, firing = 0.8*0.5 = 0.4.
+    /// If mutant changes * to /, firing = 0.8/0.5 = 1.6 clamped to 1.0 -> different.
+    #[test]
+    fn firing_strength_weight_half_exact() {
+        let (inputs, vars) = make_vars(); // mu_cold = 0.8
+        let rule = Rule::new(
+            vec![Antecedent::new("temperature", "cold")],
+            Connector::And,
+            vec![("y".into(), "b".into())],
+        )
+        .with_weight(0.5);
+        let fs = rule.firing_strength(&inputs, &vars);
+        // 0.8 * 0.5 = 0.4 (clamped stays 0.4)
+        assert!((fs - 0.4).abs() < 1e-9,
+            "Expected firing 0.4 with weight=0.5, got {}", fs);
+    }
+
 }

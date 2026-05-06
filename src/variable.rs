@@ -267,6 +267,17 @@ mod tests {
     }
 
     #[test]
+    fn universe_step_non_trivial() {
+        // Use min != 0 so that swapping - for + changes the result
+        let u = Universe::new(2.0, 8.0, 101);
+        let expected_step = (8.0 - 2.0) / (101 - 1) as f64; // 6/100 = 0.06
+        assert!(
+            (u.step() - expected_step).abs() < 1e-10,
+            "Step should be (max-min)/(resolution-1) = 0.06"
+        );
+    }
+
+    #[test]
     fn universe_two_points() {
         let u = Universe::new(10.0, 20.0, 2);
         let pts = u.points();

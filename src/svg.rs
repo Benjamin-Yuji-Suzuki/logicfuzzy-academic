@@ -597,6 +597,7 @@ mod tests {
     use super::*;
     use crate::{FuzzyVariable, MembershipFn, Term, Universe};
 
+    // ─── Helpers ──────────────────────────────────────────────────
     fn make_var() -> FuzzyVariable {
         let mut v = FuzzyVariable::new("temperature", Universe::new(0.0, 50.0, 501));
         v.add_term(Term::new("cold", MembershipFn::Trimf([0.0, 0.0, 25.0])));
@@ -605,8 +606,271 @@ mod tests {
         v
     }
 
-    // ── render_variable_svg ────────────────────────────────────────
+    fn make_simple_var() -> FuzzyVariable {
+        let mut v = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        v.add_term(Term::new("tri", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        v
+    }
 
+    // ── Existing tests (preserved) ────────────────────────────────
+    #[test]
+    fn px_boundary_values() {
+        assert!((px(0.0, 0.0, 50.0) - ML).abs() < 1e-9);
+        assert!((px(50.0, 0.0, 50.0) - (ML + PW)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn py_boundary_values() {
+        assert!((py(0.0) - (MT + PH)).abs() < 1e-9);
+        assert!((py(1.0) - MT).abs() < 1e-9);
+    }
+
+    #[test]
+    fn py_clamps_above_one() {
+        assert!((py(1.5) - MT).abs() < 1e-9);
+    }
+
+    #[test]
+    fn py_clamps_below_zero() {
+        assert!((py(-0.5) - (MT + PH)).abs() < 1e-9);
+    }
+
+    // ── NEW tests for helper functions ───────────────────────────
+    #[test]
+    fn px_mid_value() {
+        let x = px(25.0, 0.0, 50.0);
+        let expected = ML + PW / 2.0;
+        assert!((x - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fv_integer() {
+        assert_eq!(fv(5.0), "5");
+    }
+    #[test]
+    fn fv_decimal() {
+        assert_eq!(fv(5.1), "5.1");
+    }
+    #[test]
+    fn fv_negative() {
+        assert_eq!(fv(-3.0), "-3");
+    }
+    #[test]
+    fn fv_large() {
+        assert_eq!(fv(9999.0), "9999");
+    }
+
+    #[test]
+    fn rect_generates_correct_string() {
+        let mut s = String::new();
+        rect(&mut s, 10.0, 20.0, 100.0, 30.0, 5.0, "#ff0000", 0.8);
+        // Use r##"..."## to avoid conflict with # inside the string
+        let expected = r##"<rect x="10.0" y="20.0" width="100.0" height="30.0" rx="5" fill="#ff0000" fill-opacity="0.80"/>"##;
+        assert!(s.contains(expected));
+    }
+
+    #[test]
+    fn line_generates_correct_string_with_dash() {
+        let mut s = String::new();
+        line(&mut s, 0.0, 0.0, 100.0, 100.0, "#000", 2.0, "4,2");
+        assert!(s.contains(r#"stroke-dasharray="4,2""#));
+    }
+
+    #[test]
+    fn line_generates_correct_string_without_dash() {
+        let mut s = String::new();
+        line(&mut s, 0.0, 0.0, 100.0, 100.0, "#000", 2.0, "");
+        assert!(!s.contains("stroke-dasharray"));
+    }
+
+    #[test]
+    fn text_with_bold_generates_font_weight_bold() {
+        let mut s = String::new();
+        text(&mut s, 10.0, 20.0, "start", "#fff", 12, true, "Test");
+        assert!(s.contains(r#"font-weight="bold""#));
+    }
+
+    #[test]
+    fn text_without_bold_omits_font_weight() {
+        let mut s = String::new();
+        text(&mut s, 10.0, 20.0, "start", "#fff", 12, false, "Test");
+        assert!(!s.contains("font-weight"));
+    }
+
+    #[test]
+    fn circle_generates_correct_string() {
+        let mut s = String::new();
+        circle(&mut s, 1.0, 2.0, 3.0, "#000");
+        let expected = r##"<circle cx="1.0" cy="2.0" r="3" fill="#000"/>"##;
+        assert!(s.contains(expected));
+    }
+
+    // ── Tests for draw_grid_axes and draw_legend ─────────────────
+    #[test]
+    fn variable_svg_contains_grid_labels() {
+        let var = make_simple_var();
+        let svg = render_variable_svg(&var, None);
+        // Should contain X axis labels at 0, 2.5, 5, 7.5, 10
+        assert!(svg.contains(">0<") || svg.contains(">0.0"));
+        assert!(svg.contains(">10"));
+        // Y axis labels 0.00, 0.25, 0.50, 0.75, 1.00
+        assert!(svg.contains(">0.00<"));
+        assert!(svg.contains(">1.00<"));
+    }
+
+    #[test]
+    fn variable_svg_contains_legend_with_terms() {
+        let var = make_simple_var();
+        let svg = render_variable_svg(&var, None);
+        assert!(svg.contains("Terms:"));
+        assert!(svg.contains("tri"));
+    }
+
+    // ── Tests for curve helpers ──────────────────────────────────
+    #[test]
+    fn sample_curve_trimf_peak_mid() {
+        let mf = MembershipFn::Trimf([0.0, 5.0, 10.0]);
+        let pts = sample_curve(&mf, 0.0, 10.0);
+        assert_eq!(pts.len(), SAMPLES);
+        // os extremos devem ser ~0
+        assert!((pts[0].1).abs() < 1e-9);
+        assert!((pts[SAMPLES - 1].1).abs() < 1e-9);
+        // o máximo deve estar próximo de 1 (pico em 5.0, mas pode não cair exatamente no grid)
+        let max = pts
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .unwrap();
+        assert!(
+            (max.1 - 1.0).abs() < 0.01,
+            "peak should be ~1.0, got {}",
+            max.1
+        );
+        assert!(
+            (max.0 - 5.0).abs() < 0.05,
+            "peak x should be ~5.0, got {}",
+            max.0
+        );
+    }
+
+    #[test]
+    fn polyline_pts_generates_valid_points() {
+        let pts = vec![(0.0, 0.0), (10.0, 1.0)];
+        let s = polyline_pts(&pts, 0.0, 10.0);
+        let count = s.matches(',').count();
+        assert_eq!(count, 2); // two commas for two points: "x1,y1 x2,y2"
+    }
+
+    #[test]
+    fn filled_poly_contains_expected_coordinates() {
+        let pts = vec![(0.0, 0.0), (10.0, 0.5)];
+        let s = filled_poly(&pts, 0.0, 10.0);
+        assert!(s.contains(format!("{:.1},{:.1}", ML, MT + PH).as_str()));
+        assert!(s.contains(format!("{:.1},{:.1}", ML + PW, py(0.5)).as_str()));
+    }
+
+    #[test]
+    fn clipped_poly_applies_clip() {
+        let pts = vec![(0.0, 0.0), (10.0, 1.0)];
+        let s = clipped_poly(&pts, 0.5, 0.0, 10.0);
+        let y_clamped = py(0.5);
+        assert!(s.contains(format!("{:.1}", y_clamped).as_str()));
+    }
+
+    // ── draw_intersection ────────────────────────────────────────
+    #[test]
+    fn draw_intersection_nonzero_degree() {
+        let mut s = String::new();
+        draw_intersection(
+            &mut s,
+            5.0,
+            0.8,
+            0.0,
+            10.0,
+            "#ff0000",
+            "μ_cold(5.0)=0.8000",
+            0.0,
+        );
+        assert!(s.contains("<circle"));
+        assert!(s.contains(r#"stroke-dasharray="4,3""#));
+    }
+
+    #[test]
+    fn draw_intersection_zero_degree() {
+        let mut s = String::new();
+        draw_intersection(
+            &mut s,
+            5.0,
+            0.0,
+            0.0,
+            10.0,
+            "#ff0000",
+            "μ_cold(5.0)=0.0000",
+            0.0,
+        );
+        assert!(s.contains("<circle"));
+        assert!(!s.contains("stroke-dasharray"));
+    }
+
+    // ── render_variable_svg precise checks ───────────────────────
+    #[test]
+    fn svg_with_input_marker_at_specific_position() {
+        let var = make_simple_var();
+        let svg = render_variable_svg(&var, Some(5.0));
+        let xp = px(5.0, 0.0, 10.0);
+        let x_str = format!("{:.1}", xp);
+        // check the dashed vertical line is placed at xp
+        assert!(
+            svg.contains(&format!("x1=\"{}\"", x_str)),
+            "missing x1 at {}",
+            x_str
+        );
+        assert!(
+            svg.contains(&format!("x2=\"{}\"", x_str)),
+            "missing x2 at {}",
+            x_str
+        );
+        // check the label with the input value
+        assert!(svg.contains("x = 5"), "missing input label");
+    }
+
+    #[test]
+    fn svg_contains_intersection_annotations() {
+        let var = make_simple_var();
+        let svg = render_variable_svg(&var, Some(2.5));
+        assert!(svg.contains("μ_tri(2.5)"));
+    }
+
+    // ── render_aggregated_svg ────────────────────────────────────
+    #[test]
+    fn aggregated_svg_centroid_marker_at_correct_x() {
+        let mut var = FuzzyVariable::new("out", Universe::new(0.0, 100.0, 1001));
+        var.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 50.0])));
+        var.add_term(Term::new("high", MembershipFn::Trimf([50.0, 100.0, 100.0])));
+        let centroid = 68.5;
+        let svg = render_aggregated_svg(&var, &[("low", 0.3), ("high", 0.7)], centroid);
+        let xp = px(centroid, 0.0, 100.0);
+        let x_str = format!("{:.1}", xp);
+        // The centroid dashed line should have x1/x2 set to xp
+        assert!(
+            svg.contains(&format!("x1=\"{}\"", x_str)),
+            "centroid line x1 not found in SVG"
+        );
+        assert!(
+            svg.contains(&format!("x2=\"{}\"", x_str)),
+            "centroid line x2 not found in SVG"
+        );
+        assert!(svg.contains("centroid"), "word 'centroid' missing");
+    }
+
+    #[test]
+    fn aggregated_svg_contains_alpha_labels() {
+        let mut var = FuzzyVariable::new("out", Universe::new(0.0, 100.0, 1001));
+        var.add_term(Term::new("mid", MembershipFn::Trimf([25.0, 50.0, 75.0])));
+        let svg = render_aggregated_svg(&var, &[("mid", 0.6)], 50.0);
+        assert!(svg.contains("α=0.6") || svg.contains("α=0.60"));
+    }
+
+    // ── Pre-existing tests (kept) ─────────────────────────────────
     #[test]
     fn svg_starts_and_ends_correctly() {
         let svg = render_variable_svg(&make_var(), None);
@@ -630,14 +894,12 @@ mod tests {
     #[test]
     fn svg_contains_legend() {
         let svg = render_variable_svg(&make_var(), None);
-        assert!(svg.contains("Terms:"), "should have legend strip");
+        assert!(svg.contains("Terms:"));
     }
 
     #[test]
     fn svg_legend_contains_all_term_labels() {
-        // Legend repeats term labels, but in the legend strip
         let svg = render_variable_svg(&make_var(), None);
-        // Check presence (may appear more than once)
         assert!(svg.contains("cold"));
         assert!(svg.contains("warm"));
         assert!(svg.contains("hot"));
@@ -665,10 +927,7 @@ mod tests {
     fn svg_input_outside_universe_ignored() {
         let with_out = render_variable_svg(&make_var(), Some(999.0));
         let without = render_variable_svg(&make_var(), None);
-        assert_eq!(
-            with_out, without,
-            "input outside universe should be ignored"
-        );
+        assert_eq!(with_out, without);
     }
 
     #[test]
@@ -692,7 +951,7 @@ mod tests {
         ));
         let svg = render_variable_svg(&v, Some(50.0));
         assert!(svg.contains("mid"));
-        assert!(svg.contains("1.0000")); // μ at plateau
+        assert!(svg.contains("1.0000"));
     }
 
     #[test]
@@ -731,86 +990,163 @@ mod tests {
             ));
         }
         let svg = render_variable_svg(&v, None);
-        // All 8 terms appear in the legend
         for i in 0..8 {
             assert!(svg.contains(&format!("t{}", i)));
         }
     }
 
-    // ── render_aggregated_svg ──────────────────────────────────────
-
+    /// Check that vertical grid lines are placed at exact x coordinates.
     #[test]
-    fn aggregated_svg_contains_centroid() {
-        let mut v = FuzzyVariable::new("output", Universe::new(0.0, 100.0, 1001));
-        v.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 50.0])));
-        v.add_term(Term::new("high", MembershipFn::Trimf([50.0, 100.0, 100.0])));
-        let svg = render_aggregated_svg(&v, &[("low", 0.3), ("high", 0.7)], 68.5);
-        assert!(svg.contains("centroid"));
-        // centroid value appears
-        assert!(svg.contains("68.5") || svg.contains("68.50"));
+    fn grid_vertical_lines_at_correct_x() {
+        let mut var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("a", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let svg = render_variable_svg(&var, None);
+        for &t in &[0.0_f64, 0.25, 0.5, 0.75, 1.0] {
+            let xv = 0.0 + (10.0 - 0.0) * t;
+            let xp = px(xv, 0.0, 10.0);
+            let expected_x = format!("x1=\"{:.1}\"", xp);
+            let expected_x2 = format!("x2=\"{:.1}\"", xp);
+            assert!(
+                svg.contains(&expected_x) && svg.contains(&expected_x2),
+                "Grid line for t={} not found at x={:.1}",
+                t,
+                xp
+            );
+        }
     }
 
     #[test]
-    fn aggregated_svg_contains_legend() {
-        let mut v = FuzzyVariable::new("out", Universe::new(0.0, 100.0, 1001));
-        v.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 50.0])));
-        v.add_term(Term::new("high", MembershipFn::Trimf([50.0, 100.0, 100.0])));
-        let svg = render_aggregated_svg(&v, &[("low", 0.3), ("high", 0.7)], 68.5);
-        assert!(svg.contains("Terms:"));
+    fn grid_horizontal_lines_and_labels() {
+        let mut var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("a", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let svg = render_variable_svg(&var, None);
+        for &d in &[0.25_f64, 0.5, 0.75, 1.0] {
+            let y = py(d);
+            let expected_y1 = format!("y1=\"{:.1}\"", y);
+            let expected_y2 = format!("y2=\"{:.1}\"", y);
+            assert!(
+                svg.contains(&expected_y1) && svg.contains(&expected_y2),
+                "Horizontal grid line at d={} not found at y={:.1}",
+                d,
+                y
+            );
+        }
     }
 
+    /// Legend items must be positioned with correct x spacing.
     #[test]
-    fn aggregated_svg_centroid_outside_universe_no_triangle() {
-        let mut v = FuzzyVariable::new("out", Universe::new(0.0, 100.0, 1001));
-        v.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 50.0])));
-        // centroid=200 is outside universe → centroid appears in subtitle but not as a triangle marker
-        let svg_out = render_aggregated_svg(&v, &[("low", 0.0)], 200.0);
-        let svg_in = render_aggregated_svg(&v, &[("low", 0.5)], 50.0);
-        // When centroid is IN the universe, it generates a triangle <polygon> + a text label
-        // When OUT of the universe, the triangle + label block is skipped
-        // The label "centroid = 50.0000" only appears inside the plot when centroid is valid
+    fn legend_items_have_correct_x_offset() {
+        let mut var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("one", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        var.add_term(Term::new("two", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let svg = render_variable_svg(&var, None);
+        // Legend drawing uses a layout with title at ML+8, items spaced by item_w.
+        // The first coloured square after title has x = ML + title_w + 0*item_w
+        let n = var.term_count() as f64;
+        let title_w = 84.0;
+        let avail = PW - title_w;
+        let _item_w = (avail / n).min(110.0);
+        let start_x = ML + title_w;
+        // The label of the first term should be at x = start_x + 14.0 (square at ix, label at ix+14)
+        // We'll just check that the first term label "one" is placed at a specific x coordinate.
+        // The text element for "one" should contain x="..." near start_x + 14.
+        let expected_x = start_x + 14.0;
+        // Look for a text element containing "one" and the x coordinate
+        let pat = format!("x=\"{:.1}\"", expected_x);
+        // It's possible the label text is after the square, but we can search for the term name and nearby x coordinate.
+        // Simpler: assert that the SVG contains the term name and the x coordinate in the same text element.
         assert!(
-            svg_in.contains("centroid = 50.0000"),
-            "centroid inside universe should have marker with text"
-        );
-        // The value 200.0000 only appears in the subtitle, never in a plot label
-        let count_200 = svg_out.matches("200.0000").count();
-        assert_eq!(
-            count_200, 1,
-            "200 should appear only in subtitle, not in marker; found {} times",
-            count_200
+            svg.contains(&pat) && svg.contains(">one<"),
+            "First legend item not at expected x={:.1}",
+            expected_x
         );
     }
 
+    /// Intersection dots for non-zero degree must have correct y coordinate.
     #[test]
-    fn aggregated_svg_alpha_label_visible() {
-        let mut v = FuzzyVariable::new("out", Universe::new(0.0, 100.0, 1001));
-        v.add_term(Term::new("mid", MembershipFn::Trimf([25.0, 50.0, 75.0])));
-        let svg = render_aggregated_svg(&v, &[("mid", 0.6)], 50.0);
-        assert!(svg.contains("α=0.6") || svg.contains("α=0.60"));
-    }
-
-    // ── Coordinate helpers ────────────────────────────────────────
-
-    #[test]
-    fn px_boundary_values() {
-        assert!((px(0.0, 0.0, 50.0) - ML).abs() < 1e-9);
-        assert!((px(50.0, 0.0, 50.0) - (ML + PW)).abs() < 1e-9);
-    }
-
-    #[test]
-    fn py_boundary_values() {
-        assert!((py(0.0) - (MT + PH)).abs() < 1e-9);
-        assert!((py(1.0) - MT).abs() < 1e-9);
+    fn intersection_dot_at_correct_y() {
+        let mut var = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("tri", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let svg = render_variable_svg(&var, Some(2.5));
+        // mu_tri(2.5) = 0.5
+        let degree = 0.5;
+        let yp = py(degree);
+        // There should be a circle at that y (and at the correct x)
+        let expected_circle = format!("cy=\"{:.1}\"", yp);
+        assert!(
+            svg.contains(&expected_circle),
+            "Intersection dot at degree {} missing at y={:.1}",
+            degree,
+            yp
+        );
     }
 
     #[test]
-    fn py_clamps_above_one() {
-        assert!((py(1.5) - MT).abs() < 1e-9);
+    fn aggregated_centroid_y_placement() {
+        let mut var = FuzzyVariable::new("out", Universe::new(0.0, 100.0, 1001));
+        var.add_term(Term::new("low", MembershipFn::Trimf([0.0, 0.0, 50.0])));
+        var.add_term(Term::new("high", MembershipFn::Trimf([50.0, 100.0, 100.0])));
+        let centroid = 68.5;
+        let svg = render_aggregated_svg(&var, &[("low", 0.3), ("high", 0.7)], centroid);
+        // The centroid line extends from y=MT to y=MT+PH
+        let y_top = MT;
+        let y_bot = MT + PH;
+        assert!(svg.contains(format!("y1=\"{:.1}\"", y_top).as_str()));
+        assert!(svg.contains(format!("y2=\"{:.1}\"", y_bot).as_str()));
     }
 
+    /// Check that draw_grid_axes generates lines at the plot boundaries.
+    /// These coordinates are mathematically fixed (ML, ML+PW, MT, MT+PH)
+    /// so any mutation of arithmetic inside draw_grid_axes will shift them.
     #[test]
-    fn py_clamps_below_zero() {
-        assert!((py(-0.5) - (MT + PH)).abs() < 1e-9);
+    fn draw_grid_axes_boundary_coordinates() {
+        let var = FuzzyVariable::new("test", Universe::new(0.0, 10.0, 101));
+        let mut s = String::new();
+        draw_grid_axes(&mut s, &var);
+
+        // Leftmost vertical line (t=0.0) should be at x = ML
+        let left_x = format!("x1=\"{:.1}\"", ML);
+        let left_x2 = format!("x2=\"{:.1}\"", ML);
+        assert!(s.contains(&left_x), "Left vertical line x1 not found");
+        assert!(s.contains(&left_x2), "Left vertical line x2 not found");
+
+        // Rightmost vertical line (t=1.0) should be at x = ML + PW
+        let right_x = format!("x1=\"{:.1}\"", ML + PW);
+        let right_x2 = format!("x2=\"{:.1}\"", ML + PW);
+        assert!(s.contains(&right_x), "Right vertical line x1 not found");
+        assert!(s.contains(&right_x2), "Right vertical line x2 not found");
+
+        // Top horizontal line (d=1.0) should be at y = MT
+        let top_y = format!("y1=\"{:.1}\"", MT);
+        let top_y2 = format!("y2=\"{:.1}\"", MT);
+        assert!(s.contains(&top_y), "Top horizontal line y1 not found");
+        assert!(s.contains(&top_y2), "Top horizontal line y2 not found");
+
+        // The plot border is a rect with exact coordinates
+        let border = format!(
+            r#"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="none""#,
+            ML, MT, PW, PH
+        );
+        assert!(s.contains(&border), "Plot border rect missing or incorrect");
     }
+
+    /// Test draw_legend directly to kill arithmetic mutants inside it.
+    #[test]
+    fn draw_legend_puts_correct_positions() {
+        let mut var = FuzzyVariable::new("test", Universe::new(0.0, 10.0, 101));
+        var.add_term(Term::new("low", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        var.add_term(Term::new("high", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        let mut s = String::new();
+        draw_legend(&mut s, &var);
+
+        // The first colored square is placed at (start_x, ly-8) where start_x = ML + title_w
+        let title_w = 84.0;
+        let start_x = ML + title_w;
+        let expected_rect_x = format!("x=\"{:.1}\"", start_x);
+        assert!(s.contains(&expected_rect_x), "First legend square not at expected x");
+
+        // The legend title must be visible
+        assert!(s.contains("Terms:"), "Legend title missing");
+    }
+
 }

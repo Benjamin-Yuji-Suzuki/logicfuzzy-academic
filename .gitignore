@@ -4,3 +4,5 @@
 Cargo.lock
 cargo.lock
 src/main.rs 
+mutants.out
+mutants.out.old
