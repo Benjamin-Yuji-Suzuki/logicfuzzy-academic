@@ -23,19 +23,14 @@ jobs:
 
       - name: Run cargo mutants and parse results
         id: parse
-        # O segredo: desligar temporariamente o "set -e" para o parsing não matar o job
-        shell: bash
+        shell: bash {0}
         run: |
-          set -euo pipefail
           cargo mutants --timeout 60 2>&1 | tee mutants.log
 
-          # A partir daqui, queremos extrair os números sem quebrar o job
-          set +e
           SUMMARY=$(grep 'mutants tested in' mutants.log | tail -1 || true)
           MISSED=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="missed") print $(i-1)}' || echo 0)
           CAUGHT=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="caught") print $(i-1)}' || echo 0)
           UNVIABLE=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="unviable") print $(i-1)}' || echo 0)
-          set -e
 
           MISSED=${MISSED:-0}
           CAUGHT=${CAUGHT:-0}
