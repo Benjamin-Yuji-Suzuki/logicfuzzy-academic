@@ -27,10 +27,16 @@ jobs:
         run: |
           cargo mutants --timeout 60 2>&1 | tee mutants.log
 
+          # DEBUG: mostra a linha de resumo encontrada
           SUMMARY=$(grep 'mutants tested in' mutants.log | tail -1 || true)
-          MISSED=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="missed") print $(i-1)}' || echo 0)
-          CAUGHT=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="caught") print $(i-1)}' || echo 0)
-          UNVIABLE=$(echo "$SUMMARY" | awk '{for(i=1;i<=NF;i++) if($i=="unviable") print $(i-1)}' || echo 0)
+          echo "DEBUG SUMMARY=[$SUMMARY]"
+
+          # Extração usando grep + sed (mais simples e portável)
+          MISSED=$(echo "$SUMMARY" | grep -o '[0-9]* missed' | head -1 | sed 's/ missed//' || echo 0)
+          CAUGHT=$(echo "$SUMMARY" | grep -o '[0-9]* caught' | head -1 | sed 's/ caught//' || echo 0)
+          UNVIABLE=$(echo "$SUMMARY" | grep -o '[0-9]* unviable' | head -1 | sed 's/ unviable//' || echo 0)
+
+          echo "DEBUG MISSED=$MISSED CAUGHT=$CAUGHT UNVIABLE=$UNVIABLE"
 
           MISSED=${MISSED:-0}
           CAUGHT=${CAUGHT:-0}
@@ -41,6 +47,8 @@ jobs:
           if [ "$TOTAL" -gt 0 ]; then
             PERCENT=$(echo "scale=1; 100 * $CAUGHT / $TOTAL" | bc || echo "0.0")
           fi
+
+          echo "DEBUG PERCENT=$PERCENT"
 
           echo "caught=$CAUGHT" >> $GITHUB_OUTPUT
           echo "percent=$PERCENT" >> $GITHUB_OUTPUT
