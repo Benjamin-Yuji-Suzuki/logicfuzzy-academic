@@ -1,6 +1,17 @@
+name: Mutation Testing
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
   mutation:
     runs-on: ubuntu-latest
-    timeout-minutes: 120            # margem generosa para o job todo
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -14,25 +25,26 @@
         id: parse
         run: |
           set -euo pipefail
-          # 1. Apenas 2 jobs paralelos → evita explosão de memória
-          # 2. --timeout 60 → cada mutante tem 60s individuais
-          # 3. Exclui o mutante específico que causa loop infinito (discrete_cog += → -=)
-          cargo mutants \
-            --jobs 2 \
-            --timeout 60 \
-            --exclude "src/engine.rs:866:15" \
-            2>&1 | tee mutants.log
+          # 2 jobs paralelos → seguro para memória
+          # timeout de 60s para cada mutante
+          cargo mutants --jobs 2 --timeout 60 2>&1 | tee mutants.log
 
-          SUMMARY=$(grep 'mutants tested in' mutants.log | tail -1)
-          MISSED=$(echo "$SUMMARY" | grep -oP '\d+(?= missed)')
-          CAUGHT=$(echo "$SUMMARY" | grep -oP '\d+(?= caught)')
-          UNVIABLE=$(echo "$SUMMARY" | grep -oP '\d+(?= unviable)')
+          # Extração segura: se grep não achar nada, assume 0
+          SUMMARY=$(grep 'mutants tested in' mutants.log | tail -1 || true)
+          MISSED=$(echo "$SUMMARY" | grep -oP '\d+(?= missed)' || echo 0)
+          CAUGHT=$(echo "$SUMMARY" | grep -oP '\d+(?= caught)' || echo 0)
+          UNVIABLE=$(echo "$SUMMARY" | grep -oP '\d+(?= unviable)' || echo 0)
           TOTAL=$((MISSED + CAUGHT + UNVIABLE))
-          PERCENT=$(echo "scale=1; 100 * $CAUGHT / $TOTAL" | bc)
+          if [ "$TOTAL" -eq 0 ]; then
+            PERCENT="0.0"
+          else
+            PERCENT=$(echo "scale=1; 100 * $CAUGHT / $TOTAL" | bc)
+          fi
           echo "caught=$CAUGHT" >> $GITHUB_OUTPUT
           echo "percent=$PERCENT" >> $GITHUB_OUTPUT
           echo "## Mutation score: ${PERCENT}% (${CAUGHT} caught out of ${TOTAL})" >> $GITHUB_STEP_SUMMARY
 
+          # Cor do badge
           if (( $(echo "$PERCENT >= 80" | bc -l) )); then
             COLOR="brightgreen"
           elif (( $(echo "$PERCENT >= 60" | bc -l) )); then
@@ -53,15 +65,16 @@
           }
           EOF
 
-      - name: Deploy to mutation‑badge branch
+      - name: Deploy badge to mutation‑badge branch
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
+          # Remove branch local/remoto se existir, para recriar limpo
+          git branch -D mutation-badge || true
+          git push origin --delete mutation-badge || true
           git checkout --orphan mutation-badge
-          git reset
-          cp mutation.json /tmp/mutation.json
-          git checkout main -- .gitignore
-          cp /tmp/mutation.json mutation.json
+          git rm -rf . || true
+          cp /tmp/mutation.json ./mutation.json
           git add mutation.json
           git commit -m "Update mutation score [skip ci]"
-          git push -f origin mutation-badge
+          git push origin mutation-badge --force
