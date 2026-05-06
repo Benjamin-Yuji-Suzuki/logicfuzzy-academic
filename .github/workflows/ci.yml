@@ -65,8 +65,8 @@ jobs:
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
       - name: Convert lcov to cobertura
         run: |
-          cargo install lcov-cobertura
-          lcov-cobertura lcov.info --output cobertura.xml
+          cargo install lcov-to-cobertura-xml
+          lcov-to-cobertura-xml lcov.info cobertura.xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
