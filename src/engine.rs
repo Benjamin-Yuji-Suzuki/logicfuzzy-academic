@@ -859,12 +859,10 @@ impl MamdaniEngine {
 
         let min = cons_var.universe.min;
         let max = cons_var.universe.max;
-        let mut disc_pts = Vec::new();
-        let mut v = min;
-        while v <= max + 1e-9 {
-            disc_pts.push(v.min(max));
-            v += step;
-        }
+        let steps = ((max - min) / step).ceil() as usize + 1;
+        let disc_pts: Vec<f64> = (0..steps)
+            .map(|i| (min + i as f64 * step).min(max))
+            .collect();
 
         let mu_values: Vec<f64> = disc_pts
             .iter()
@@ -2553,4 +2551,53 @@ mod tests {
             "Centroid should still be around 5 for step 3.0"
         );
     }
+
+    /// Mata o mutante que troca += por -= na acumulação do discrete_cog.
+    #[test]
+    fn discrete_cog_accumulation_mutant() {
+        let mut m = MamdaniEngine::new();
+
+        // Antecedente irrelevante, só para disparar a regra
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 1.0, 2));
+        x.add_term(Term::new("on", MembershipFn::Trapmf([0.0, 0.0, 1.0, 1.0])));
+        m.add_antecedent(x);
+
+        // Consequente com universo pequeno e triângulo centrado em 5.0
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 5));
+        y.add_term(Term::new("tri", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        m.add_consequent(y);
+
+        m.add_rule(RuleBuilder::new().when("x", "on").then("y", "tri").build());
+        m.set_input_unchecked("x", 0.5);
+
+        // Chama discrete_cog com step grande para poucas iterações
+        let table = m.discrete_cog("y", 3.0).unwrap(); // pontos: [0, 3, 6, 9, 10]
+
+        // O centróide teórico de um triângulo simétrico é 5.0, independente do step
+        assert!(
+            (table.centroid - 5.0).abs() < 0.5,
+            "Centroid must be ~5.0; if mutated to -=, it will be wildly different"
+        );
+    }
+
+    /// Garante que a geração de pontos e a acumulação estão corretas
+    /// e que mutantes aritméticos são mortos rapidamente.
+    #[test]
+    fn discrete_cog_accumulation_guarded() {
+        let mut m = MamdaniEngine::new();
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 1.0, 2));
+        x.add_term(Term::new("on", MembershipFn::Trapmf([0.0, 0.0, 1.0, 1.0])));
+        m.add_antecedent(x);
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 5));
+        y.add_term(Term::new("tri", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        m.add_consequent(y);
+        m.add_rule(RuleBuilder::new().when("x", "on").then("y", "tri").build());
+        m.set_input_unchecked("x", 0.5);
+        let table = m.discrete_cog("y", 3.0).unwrap();
+        assert!(
+            (table.centroid - 5.0).abs() < 0.5,
+            "Centroid must be ~5.0; if mutated, it will be different"
+        );
+    }
+
 }
