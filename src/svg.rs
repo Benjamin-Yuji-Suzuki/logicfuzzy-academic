@@ -1448,37 +1448,38 @@ mod tests {
         let mut x_vals = Vec::new();
         let mut search_from = 0;
 
-        loop {
-            let remaining = &svg[search_from..];
-            let rect_start = match remaining.find("<rect ") {
-                Some(pos) => search_from + pos,
-                None => break,
-            };
-            let rect_end = match svg[rect_start..].find("/>") {
-                Some(pos) => rect_start + pos + 2,
-                None => break,
-            };
+        while let Some((rect_start, rect_end)) = find_next_rect_bounds(svg, search_from) {
             let rect_str = &svg[rect_start..rect_end];
-
-            // Select only the label background rectangles
-            if rect_str.contains("fill=\"#1e1e2e\"") && rect_str.contains("fill-opacity=\"0.90\"") {
-                if let Some(x_pos) = rect_str.find("x=\"") {
-                    let after = &rect_str[x_pos + 3..];
-                    if let Some(quote) = after.find('"') {
-                        if let Ok(x) = after[..quote].parse::<f64>() {
-                            x_vals.push(x);
-                        }
-                    }
-                }
+            if let Some(x) = parse_label_rect_x(rect_str) {
+                x_vals.push(x);
             }
-
             search_from = rect_end;
-            if search_from >= svg.len() {
-                break;
-            }
         }
 
         x_vals
+    }
+
+    /// Finds the next `<rect .../>` element in `svg` starting from `search_from`,
+    /// returning the byte range `(start, end)` of the element, or `None` if none found.
+    fn find_next_rect_bounds(svg: &str, search_from: usize) -> Option<(usize, usize)> {
+        let remaining = &svg[search_from..];
+        let rect_start = remaining.find("<rect ").map(|pos| search_from + pos)?;
+        let rect_end = svg[rect_start..]
+            .find("/>")
+            .map(|pos| rect_start + pos + 2)?;
+        Some((rect_start, rect_end))
+    }
+
+    /// If `rect_str` is a label background rectangle (fill `#1e1e2e` and opacity `0.90`),
+    /// extracts and returns the `x` attribute as `f64`. Otherwise returns `None`.
+    fn parse_label_rect_x(rect_str: &str) -> Option<f64> {
+        if !rect_str.contains("fill=\"#1e1e2e\"") || !rect_str.contains("fill-opacity=\"0.90\"") {
+            return None;
+        }
+        let x_pos = rect_str.find("x=\"")?;
+        let after = &rect_str[x_pos + 3..];
+        let quote = after.find('"')?;
+        after[..quote].parse::<f64>().ok()
     }
 
     // ─── constant values (protects W, H, ML, etc.) ──────────────
