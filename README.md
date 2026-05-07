@@ -54,11 +54,10 @@ For the full declaration of AI usage, see the [AI Usage Declaration](#-ai-usage-
 - **SVG visualization** — colour legend, μ annotations, clipped activation areas, aggregated output
 - **`MamdaniEngine: Clone`** — clone the engine to run multiple scenarios without rebuilding
 - **CI with coverage** — separate `doc-test` job, `coverage` job with `cargo-llvm-cov`, Codecov upload, and SonarCloud continuous analysis
-- **Mutation testing** — `cargo-mutants` with dedicated CI workflow and dynamic badge (~72.6% detection score, 244+ mutants tested per module)
+- **Mutation testing** — `cargo-mutants` with dedicated CI workflow and dynamic badge (see badge above)
 - **SonarCloud integration** — continuous static analysis covering code smells, duplications, complexity, and vulnerabilities
 - **Comprehensive test suite** — unit, integration, E2E, robustness, and concurrency tests; expanded SVG renderer coverage with exact-coordinate and edge-case assertions
 - **Zero fuzzy dependencies** — only Rust `std`
-- **374 unit tests + 6 doctests** — covering the full pipeline
 
 ---
 
@@ -364,9 +363,9 @@ crisp inputs  →  fuzzification  →  inference (AND=min, OR=max, NOT=1-μ)
 ```bash
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
-cargo run --example demo   # two systems + SVG export to output/
-cargo test                 # 374 unit tests + 6 doctests
-cargo mutants              # mutation testing (full suite)
+cargo run --example demo          # two systems + SVG export to output/
+cargo test                        # full test suite
+cargo mutants                     # mutation testing (full suite)
 cargo mutants -f src/svg.rs --timeout 60   # mutation testing for a specific module
 ```
 
@@ -376,14 +375,7 @@ cargo mutants -f src/svg.rs --timeout 60   # mutation testing for a specific mod
 
 This project uses [`cargo-mutants`](https://github.com/sourcefrog/cargo-mutants) to measure the **quality of the test suite** — not just coverage, but whether tests actually catch logical errors.
 
-The mutation workflow runs automatically on every push and updates the badge dynamically via a dedicated `mutation-badge` branch.
-
-| Metric | Value |
-|--------|-------|
-| Current mutation score | ~72.6% |
-| Mutants tested (svg.rs) | 244 |
-| Caught | 109 |
-| Missed | 135 |
+The mutation workflow runs automatically on every push to `main` and updates the badge dynamically via a dedicated `mutation-badge` branch. The current score is always reflected in the badge at the top of this file.
 
 > A mutation score above 70% is considered strong for a pure-logic library with complex floating-point arithmetic.
 
@@ -398,7 +390,7 @@ This project is continuously analyzed by [SonarCloud](https://sonarcloud.io/summ
 - Code duplication
 - Test coverage integration (via lcov)
 
-Current status: **0 bugs · 0 vulnerabilities · 0.0% duplication · ~98% coverage**
+Current status is always reflected in the badges at the top of this file.
 
 ---
 
