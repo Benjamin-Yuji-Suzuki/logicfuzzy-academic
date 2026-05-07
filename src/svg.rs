@@ -305,6 +305,7 @@ fn draw_intersection(
 pub fn render_variable_svg(var: &FuzzyVariable, input: Option<f64>) -> String {
     let min = var.universe.min;
     let max = var.universe.max;
+    let valid_input = input.filter(|&v| v >= min && v <= max);
 
     let mut s = String::with_capacity(20_000);
 
@@ -335,23 +336,44 @@ pub fn render_variable_svg(var: &FuzzyVariable, input: Option<f64>) -> String {
     // Grid and axes
     draw_grid_axes(&mut s, var);
 
-    // ── Curves ────────────────────────────────────────────────────
-    let mut intersections: Vec<(f64, &str, &str)> = Vec::new();
+    // Curves and intersections
+    let intersections = render_curves_and_intersections(&mut s, var, min, max, valid_input);
+
+    // Crisp input marker
+    if let Some(val) = valid_input {
+        render_input_marker(&mut s, val, min, max, &intersections);
+    }
+
+    // Colour legend
+    draw_legend(&mut s, var);
+
+    s.push_str("</svg>");
+    s
+}
+
+/// Renders the membership curves (background fill, line, clipped fill) for all terms,
+/// and returns a vector of (membership_degree, term_label, color) for valid inputs.
+fn render_curves_and_intersections(
+    s: &mut String,
+    var: &FuzzyVariable,
+    min: f64,
+    max: f64,
+    valid_input: Option<f64>,
+) -> Vec<(f64, String, String)> {
+    let mut intersections = Vec::new();
 
     for (idx, term) in var.terms().iter().enumerate() {
         let color = PALETTE[idx % PALETTE.len()];
         let pts = sample_curve(&term.mf, min, max);
 
         // Clipped fill (only when input is within bounds)
-        if let Some(val) = input {
-            if val >= min && val <= max {
-                let deg = term.mf.eval(val);
-                if deg > 1e-9 {
-                    let cp = clipped_poly(&pts, deg, min, max);
-                    s.push_str(&format!(
-                        r#"<polygon points="{cp}" fill="{color}" fill-opacity="0.38" clip-path="url(#p)"/>"#
-                    ));
-                }
+        if let Some(val) = valid_input {
+            let deg = term.mf.eval(val);
+            if deg > 1e-9 {
+                let cp = clipped_poly(&pts, deg, min, max);
+                s.push_str(&format!(
+                    r#"<polygon points="{cp}" fill="{color}" fill-opacity="0.38" clip-path="url(#p)"/>"#
+                ));
             }
         }
 
@@ -367,63 +389,62 @@ pub fn render_variable_svg(var: &FuzzyVariable, input: Option<f64>) -> String {
             r#"<polyline points="{lp}" fill="none" stroke="{color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" clip-path="url(#p)"/>"#
         ));
 
-        // Collect intersections
-        if let Some(val) = input {
-            if val >= min && val <= max {
-                intersections.push((term.mf.eval(val), &term.label, color));
-            }
+        // Collect intersection data
+        if let Some(val) = valid_input {
+            intersections.push((term.mf.eval(val), term.label.clone(), color.to_string()));
         }
     }
 
-    // ── Crisp input marker ────────────────────────────────────────
-    if let Some(val) = input {
-        if val >= min && val <= max {
-            let xp = px(val, min, max);
+    intersections
+}
 
-            // Vertical dashed line
-            s.push_str(&format!(
-                r#"<line x1="{xp:.1}" y1="{MT}" x2="{xp:.1}" y2="{:.1}" stroke="{YELLOW}" stroke-width="1.5" stroke-dasharray="5,3" clip-path="url(#p)"/>"#,
-                MT + PH
-            ));
+/// Draws the vertical dashed line, triangle marker, input label, and per-term annotations
+/// for a valid crisp input value.
+fn render_input_marker(
+    s: &mut String,
+    val: f64,
+    min: f64,
+    max: f64,
+    intersections: &[(f64, String, String)],
+) {
+    let xp = px(val, min, max);
 
-            // Triangle marker
-            let ty = MT + PH;
-            s.push_str(&format!(
-                r#"<polygon points="{},{} {},{} {},{}" fill="{YELLOW}"/>"#,
-                xp,
-                ty + 3.0,
-                xp - 5.0,
-                ty + 11.0,
-                xp + 5.0,
-                ty + 11.0
-            ));
+    // Vertical dashed line
+    s.push_str(&format!(
+        r#"<line x1="{xp:.1}" y1="{MT}" x2="{xp:.1}" y2="{:.1}" stroke="{YELLOW}" stroke-width="1.5" stroke-dasharray="5,3" clip-path="url(#p)"/>"#,
+        MT + PH
+    ));
 
-            // Input value label
-            text(
-                &mut s,
-                xp,
-                ty + 26.0,
-                "middle",
-                YELLOW,
-                9,
-                true,
-                &format!("x = {}", fv(val)),
-            );
+    // Triangle marker
+    let ty = MT + PH;
+    s.push_str(&format!(
+        r#"<polygon points="{},{} {},{} {},{}" fill="{YELLOW}"/>"#,
+        xp,
+        ty + 3.0,
+        xp - 5.0,
+        ty + 11.0,
+        xp + 5.0,
+        ty + 11.0
+    ));
 
-            // Per-term annotations
-            for (offset, (deg, label, color)) in intersections.iter().enumerate() {
-                let ann = format!("μ_{}({}) = {:.4}", label, fv(val), deg);
-                let oy = (offset as f64 - intersections.len() as f64 / 2.0) * 14.0;
-                draw_intersection(&mut s, val, *deg, min, max, color, &ann, oy);
-            }
-        }
+    // Input value label
+    text(
+        s,
+        xp,
+        ty + 26.0,
+        "middle",
+        YELLOW,
+        9,
+        true,
+        &format!("x = {}", fv(val)),
+    );
+
+    // Per-term annotations
+    for (offset, (deg, label, color)) in intersections.iter().enumerate() {
+        let ann = format!("μ_{}({}) = {:.4}", label, fv(val), deg);
+        let oy = (offset as f64 - intersections.len() as f64 / 2.0) * 14.0;
+        draw_intersection(s, val, *deg, min, max, color, &ann, oy);
     }
-
-    // ── Colour legend ─────────────────────────────────────────────
-    draw_legend(&mut s, var);
-
-    s.push_str("</svg>");
-    s
 }
 
 // ─── Aggregated output SVG ───────────────────────────────────────
@@ -1404,21 +1425,39 @@ mod tests {
         // input near the right edge forces “zzz” to flip left
         let svg = render_variable_svg(&var, Some(9.5));
 
-        // Collect x values from all highlight rectangles
+        let x_vals = extract_label_rect_x_values(&svg);
+
+        assert!(
+            x_vals.len() >= 2,
+            "Expected at least 2 highlight rectangles, found {}",
+            x_vals.len()
+        );
+
+        let unique_x: std::collections::BTreeSet<i64> =
+            x_vals.iter().map(|&x| (x * 10.0) as i64).collect();
+        assert!(
+            unique_x.len() >= 2,
+            "Highlight rectangles should have at least two distinct x positions, got: {:?}",
+            unique_x
+        );
+    }
+
+    /// Parses an SVG string and extracts the `x` attribute values of all label background rectangles.
+    /// Label background rectangles are identified by having `fill="#1e1e2e"` and `fill-opacity="0.90"`.
+    fn extract_label_rect_x_values(svg: &str) -> Vec<f64> {
         let mut x_vals = Vec::new();
         let mut search_from = 0;
+
         loop {
             let remaining = &svg[search_from..];
-            let rect_start = remaining.find("<rect ");
-            if rect_start.is_none() {
-                break;
-            }
-            let rect_start = search_from + rect_start.unwrap();
-            let rect_end = svg[rect_start..].find("/>").map(|p| rect_start + p + 2);
-            if rect_end.is_none() {
-                break;
-            }
-            let rect_end = rect_end.unwrap();
+            let rect_start = match remaining.find("<rect ") {
+                Some(pos) => search_from + pos,
+                None => break,
+            };
+            let rect_end = match svg[rect_start..].find("/>") {
+                Some(pos) => rect_start + pos + 2,
+                None => break,
+            };
             let rect_str = &svg[rect_start..rect_end];
 
             // Select only the label background rectangles
@@ -1439,19 +1478,7 @@ mod tests {
             }
         }
 
-        assert!(
-            x_vals.len() >= 2,
-            "Expected at least 2 highlight rectangles, found {}",
-            x_vals.len()
-        );
-
-        let unique_x: std::collections::BTreeSet<i64> =
-            x_vals.iter().map(|&x| (x * 10.0) as i64).collect();
-        assert!(
-            unique_x.len() >= 2,
-            "Highlight rectangles should have at least two distinct x positions, got: {:?}",
-            unique_x
-        );
+        x_vals
     }
 
     // ─── constant values (protects W, H, ML, etc.) ──────────────

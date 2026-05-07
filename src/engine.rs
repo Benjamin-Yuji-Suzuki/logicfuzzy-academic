@@ -224,57 +224,23 @@ impl MamdaniEngine {
     /// engine.add_rule(RuleBuilder::new().when("x","a").then("y","b").build()); // consequent 'y' missing
     /// assert!(engine.validate_rules().is_err());
     /// ```
+    /// Validates all rules against the registered variables and terms.
+    /// Now also inspects expression-based rules (AST).
+    ///
+    /// This method is called automatically by [`compute`](Self::compute) and
+    /// [`explain`](Self::explain) when rules have been modified. You can still call it
+    /// manually for eager validation.
     #[must_use = "this Result must be used; validate_rules returns a Result that should not be ignored"]
     pub fn validate_rules(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
         for (i, rule) in self.rules.iter().enumerate() {
-            let all_antecedents: Vec<&crate::rule::Antecedent> =
-                if let Some(expr) = rule.expression() {
-                    expr.antecedents()
-                } else {
-                    rule.antecedents_full().iter().collect()
-                };
-
-            for (j, ant) in all_antecedents.iter().enumerate() {
-                if let Some(var) = self.antecedents.get(&ant.var) {
-                    if var.get_term(&ant.term).is_none() {
-                        errors.push(format!(
-                            "Rule {} antecedent {}: variable '{}' has no term '{}'",
-                            i + 1,
-                            j + 1,
-                            ant.var,
-                            ant.term
-                        ));
-                    }
-                } else {
-                    errors.push(format!(
-                        "Rule {} antecedent {}: variable '{}' not registered as antecedent",
-                        i + 1,
-                        j + 1,
-                        ant.var
-                    ));
-                }
+            let antecedents = self.rule_antecedents(rule);
+            for (j, ant) in antecedents.iter().enumerate() {
+                self.validate_antecedent(i, j, ant, &mut errors);
             }
             for (j, (cvar, cterm)) in rule.consequents().iter().enumerate() {
-                if let Some(var) = self.consequents.get(cvar) {
-                    if var.get_term(cterm).is_none() {
-                        errors.push(format!(
-                            "Rule {} consequent {}: variable '{}' has no term '{}'",
-                            i + 1,
-                            j + 1,
-                            cvar,
-                            cterm
-                        ));
-                    }
-                } else {
-                    errors.push(format!(
-                        "Rule {} consequent {}: variable '{}' not registered as consequent",
-                        i + 1,
-                        j + 1,
-                        cvar
-                    ));
-                }
+                self.validate_consequent(i, j, cvar, cterm, &mut errors);
             }
         }
 
@@ -282,6 +248,75 @@ impl MamdaniEngine {
             Ok(())
         } else {
             Err(errors)
+        }
+    }
+
+    /// Returns the list of antecedents for a rule, either from the expression or from the flat form.
+    fn rule_antecedents<'a>(
+        &self,
+        rule: &'a crate::rule::Rule,
+    ) -> Vec<&'a crate::rule::Antecedent> {
+        if let Some(expr) = rule.expression() {
+            expr.antecedents()
+        } else {
+            rule.antecedents_full().iter().collect()
+        }
+    }
+
+    /// Validates a single antecedent and pushes an error message if necessary.
+    fn validate_antecedent(
+        &self,
+        rule_index: usize,
+        ant_index: usize,
+        ant: &crate::rule::Antecedent,
+        errors: &mut Vec<String>,
+    ) {
+        if let Some(var) = self.antecedents.get(&ant.var) {
+            if var.get_term(&ant.term).is_none() {
+                errors.push(format!(
+                    "Rule {} antecedent {}: variable '{}' has no term '{}'",
+                    rule_index + 1,
+                    ant_index + 1,
+                    ant.var,
+                    ant.term
+                ));
+            }
+        } else {
+            errors.push(format!(
+                "Rule {} antecedent {}: variable '{}' not registered as antecedent",
+                rule_index + 1,
+                ant_index + 1,
+                ant.var
+            ));
+        }
+    }
+
+    /// Validates a single consequent and pushes an error message if necessary.
+    fn validate_consequent(
+        &self,
+        rule_index: usize,
+        cons_index: usize,
+        cvar: &str,
+        cterm: &str,
+        errors: &mut Vec<String>,
+    ) {
+        if let Some(var) = self.consequents.get(cvar) {
+            if var.get_term(cterm).is_none() {
+                errors.push(format!(
+                    "Rule {} consequent {}: variable '{}' has no term '{}'",
+                    rule_index + 1,
+                    cons_index + 1,
+                    cvar,
+                    cterm
+                ));
+            }
+        } else {
+            errors.push(format!(
+                "Rule {} consequent {}: variable '{}' not registered as consequent",
+                rule_index + 1,
+                cons_index + 1,
+                cvar
+            ));
         }
     }
 
@@ -414,17 +449,24 @@ impl MamdaniEngine {
             let firing = rule.firing_strength(&self.inputs, &self.antecedents);
             for (cvar, cterm) in rule.consequents() {
                 if let Some(entries) = firing_by_consequent.get_mut(cvar) {
-                    if let Some(pos) = entries.iter().position(|(t, _)| t == cterm) {
-                        if firing > entries[pos].1 {
-                            entries[pos].1 = firing;
-                        }
-                    } else {
-                        entries.push((cterm.clone(), firing));
-                    }
+                    Self::update_firing_entry(entries, cterm, firing);
                 }
             }
         }
+
         firing_by_consequent
+    }
+
+    /// Inserts or updates the firing degree for a term in the given entries list.
+    /// If the term already exists, the maximum of the current and new firing degree is kept.
+    fn update_firing_entry(entries: &mut Vec<(String, f64)>, term: &str, firing: f64) {
+        if let Some(pos) = entries.iter().position(|(t, _)| t == term) {
+            if firing > entries[pos].1 {
+                entries[pos].1 = firing;
+            }
+        } else {
+            entries.push((term.to_string(), firing));
+        }
     }
 
     /// Runs the full Mamdani pipeline and returns the crisp output for each consequent variable.
@@ -653,69 +695,91 @@ impl MamdaniEngine {
     fn defuzzify(&self, pts: &[f64], agg: &[f64], min: f64, max: f64) -> f64 {
         let fallback = (min + max) / 2.0;
         match &self.defuzz_method {
-            DefuzzMethod::Centroid => {
-                let num: f64 = pts.iter().zip(agg.iter()).map(|(&x, &m)| x * m).sum();
-                let den: f64 = agg.iter().sum();
-                if den.abs() < f64::EPSILON {
-                    fallback
-                } else {
-                    num / den
-                }
-            }
-            DefuzzMethod::Bisector => {
-                let total: f64 = agg.iter().sum();
-                if total < f64::EPSILON {
-                    return fallback;
-                }
-                let half = total / 2.0;
-                let mut acc = 0.0;
-                for (i, &m) in agg.iter().enumerate() {
-                    acc += m;
-                    if acc >= half {
-                        return pts[i];
-                    }
-                }
-                *pts.last().unwrap_or(&fallback)
-            }
-            DefuzzMethod::MeanOfMaximum => {
-                let max_mu = agg.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                if max_mu < f64::EPSILON {
-                    return fallback;
-                }
-                let (sum_x, count) = pts
-                    .iter()
-                    .zip(agg.iter())
-                    .filter(|(_, &m)| (m - max_mu).abs() < 1e-9)
-                    .fold((0.0_f64, 0_usize), |(s, c), (&x, _)| (s + x, c + 1));
-                if count == 0 {
-                    fallback
-                } else {
-                    sum_x / count as f64
-                }
-            }
+            DefuzzMethod::Centroid => self.defuzzify_centroid(pts, agg, fallback),
+            DefuzzMethod::Bisector => self.defuzzify_bisector(pts, agg, fallback),
+            DefuzzMethod::MeanOfMaximum => self.defuzzify_mean_of_maximum(pts, agg, fallback),
             DefuzzMethod::SmallestOfMaximum => {
-                let max_mu = agg.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                if max_mu < f64::EPSILON {
-                    return fallback;
-                }
-                pts.iter()
-                    .zip(agg.iter())
-                    .find(|(_, &m)| (m - max_mu).abs() < 1e-9)
-                    .map(|(&x, _)| x)
-                    .unwrap_or(fallback)
+                self.defuzzify_smallest_of_maximum(pts, agg, fallback)
             }
-            DefuzzMethod::LargestOfMaximum => {
-                let max_mu = agg.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                if max_mu < f64::EPSILON {
-                    return fallback;
-                }
-                pts.iter()
-                    .zip(agg.iter())
-                    .rfind(|(_, &m)| (m - max_mu).abs() < 1e-9)
-                    .map(|(&x, _)| x)
-                    .unwrap_or(fallback)
+            DefuzzMethod::LargestOfMaximum => self.defuzzify_largest_of_maximum(pts, agg, fallback),
+        }
+    }
+
+    /// Centroid defuzzification: weighted average of x coordinates.
+    fn defuzzify_centroid(&self, pts: &[f64], agg: &[f64], fallback: f64) -> f64 {
+        let num: f64 = pts.iter().zip(agg.iter()).map(|(&x, &m)| x * m).sum();
+        let den: f64 = agg.iter().sum();
+        if den.abs() < f64::EPSILON {
+            fallback
+        } else {
+            num / den
+        }
+    }
+
+    /// Bisector defuzzification: point that splits the area into two equal halves.
+    fn defuzzify_bisector(&self, pts: &[f64], agg: &[f64], fallback: f64) -> f64 {
+        let total: f64 = agg.iter().sum();
+        if total < f64::EPSILON {
+            return fallback;
+        }
+        let half = total / 2.0;
+        let mut acc = 0.0;
+        for (i, &m) in agg.iter().enumerate() {
+            acc += m;
+            if acc >= half {
+                return pts[i];
             }
         }
+        *pts.last().unwrap_or(&fallback)
+    }
+
+    /// Mean of Maximum defuzzification: average of all points where the membership function reaches its maximum.
+    fn defuzzify_mean_of_maximum(&self, pts: &[f64], agg: &[f64], fallback: f64) -> f64 {
+        let max_mu = Self::max_membership(agg);
+        if max_mu < f64::EPSILON {
+            return fallback;
+        }
+        let (sum_x, count) = pts
+            .iter()
+            .zip(agg.iter())
+            .filter(|(_, &m)| (m - max_mu).abs() < 1e-9)
+            .fold((0.0_f64, 0_usize), |(s, c), (&x, _)| (s + x, c + 1));
+        if count == 0 {
+            fallback
+        } else {
+            sum_x / count as f64
+        }
+    }
+
+    /// Smallest of Maximum defuzzification: smallest x where the membership function reaches its maximum.
+    fn defuzzify_smallest_of_maximum(&self, pts: &[f64], agg: &[f64], fallback: f64) -> f64 {
+        let max_mu = Self::max_membership(agg);
+        if max_mu < f64::EPSILON {
+            return fallback;
+        }
+        pts.iter()
+            .zip(agg.iter())
+            .find(|(_, &m)| (m - max_mu).abs() < 1e-9)
+            .map(|(&x, _)| x)
+            .unwrap_or(fallback)
+    }
+
+    /// Largest of Maximum defuzzification: largest x where the membership function reaches its maximum.
+    fn defuzzify_largest_of_maximum(&self, pts: &[f64], agg: &[f64], fallback: f64) -> f64 {
+        let max_mu = Self::max_membership(agg);
+        if max_mu < f64::EPSILON {
+            return fallback;
+        }
+        pts.iter()
+            .zip(agg.iter())
+            .rfind(|(_, &m)| (m - max_mu).abs() < 1e-9)
+            .map(|(&x, _)| x)
+            .unwrap_or(fallback)
+    }
+
+    /// Returns the maximum membership value in the aggregated set.
+    fn max_membership(agg: &[f64]) -> f64 {
+        agg.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
     }
 
     /// Returns the number of rules in the rule base.
