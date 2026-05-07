@@ -23,6 +23,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `render_curves_and_intersections` and `render_input_marker`.
 - **`svg.rs` — `variable_svg_multiple_intersections_distinct_x`** (test): reduced cognitive
   complexity from 22 → 15 by extracting `extract_label_rect_x_values`.
+- **`svg.rs` — `extract_label_rect_x_values`** (test helper): reduced cognitive complexity from
+  22 → 15 by extracting `find_next_rect_bounds` and `parse_label_rect_x`.
 - No functional changes; all public APIs and test results remain identical.
 - All comments kept in English per project convention.
 
