@@ -46,6 +46,7 @@ For the full declaration of AI usage, see the [AI Usage Declaration](#-ai-usage-
 - **Membership functions** — `trimf`, `trapmf`, `gaussmf`, including open shoulders
 - **`rule!` macro** — declarative DSL: `IF x IS NOT cold AND y IS high THEN z IS fast` (up to 5 antecedents)
 - **`fuzzy_var!` / `antecedent!` / `consequent!` macros** — build variables in one block
+- **`tsk_rule!` / `tsk_output!` macros** — TSK rule DSL and output registration
 - **`var_svg!` / `export_svg!` macros** — SVG export in one call
 - **`RuleBuilder`** — fluent API with `when_not()`, `and_not()`, `or_not()`, `also()`, `weight()`
 - **`Expression` AST** — arbitrary nested `AND`/`OR` trees via `Rule::from_expression()` and `RuleBuilder::when_expr()`; `Expression::antecedents()` collects all leaf antecedents
@@ -64,7 +65,7 @@ For the full declaration of AI usage, see the [AI Usage Declaration](#-ai-usage-
 - **CI with coverage** — separate `doc-test` job, `coverage` job with `cargo-llvm-cov`, Codecov upload, and SonarCloud continuous analysis
 - **Mutation testing** — `cargo-mutants` with dedicated CI workflow and dynamic badge (see badge above)
 - **SonarCloud integration** — continuous static analysis covering code smells, duplications, complexity, and vulnerabilities
-- **Comprehensive test suite** — 430+ unit, integration, E2E, robustness, and concurrency tests
+- **Comprehensive test suite** — 460+ unit, 14 integration/E2E/concurrency, and 45+ doc-tests
 - **Zero external dependencies** — only Rust `std` (built-in SplitMix64 PRNG for PSO)
 
 ---
@@ -283,6 +284,24 @@ RuleBuilder::new()
     .build()
 ```
 
+### `tsk_rule!` / `tsk_output!` — TSK helpers
+
+```rust
+use logicfuzzy_academic::tsk_rule;
+
+// Zero-order: single bias coefficient
+let rule = tsk_rule!(IF x IS small THEN y => [25.0]);
+
+// First-order: bias + one coefficient per antecedent
+let rule = tsk_rule!(IF x IS small AND y IS low THEN z => [5.0, 2.0, 3.0]);
+
+// NOT and OR also supported
+let rule = tsk_rule!(IF x IS NOT cold OR y IS high THEN z => [10.0, 1.0, 1.0]);
+
+// Register output in TskEngine
+tsk_output!(engine, "y", 0.0, 100.0, 101);
+```
+
 ### `var_svg!` / `export_svg!`
 
 ```rust
@@ -442,7 +461,7 @@ src/
 │                   try_add_antecedent(), try_add_consequent(), validate_rules()
 ├── explain.rs    — ExplainReport, RuleFiring, FuzzifiedVariable, CogTable
 ├── svg.rs        — pure-Rust SVG renderer (zero dependencies)
-├── macros.rs     — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!
+├── macros.rs     — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!, tsk_rule!, tsk_output!
 ├── tsk.rs        — TskEngine, TskRule, TskConsequent (Takagi-Sugeno-Kang inference)
 ├── pso.rs        — PsoOptimizer, PsoConfig, PsoState (zero-dependency SplitMix64 PRNG)
 └── lib.rs        — public re-exports
@@ -480,8 +499,8 @@ crisp inputs  →  fuzzification  →  inference (same AND/OR/NOT)
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
 cargo run --example demo          # two Mamdani systems + SVG export to output/
-cargo test                        # full test suite (430+ unit + 14 integration)
-cargo clippy -- -D warnings       # lint check
+cargo test                        # full test suite (460 unit + 14 integration + 45 doc-tests)
+cargo clippy --tests -- -D warnings  # lint check (tests included)
 cargo mutants                     # mutation testing (full suite)
 cargo mutants -f src/svg.rs --timeout 60   # mutation testing for a specific module
 ```
@@ -491,7 +510,7 @@ cargo mutants -f src/svg.rs --timeout 60   # mutation testing for a specific mod
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-logicfuzzy_academic = "0.2"
+logicfuzzy_academic = "0.1.9"
 ```
 
 Then:

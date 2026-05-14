@@ -28,12 +28,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`engine.rs` — `firing_degrees_by_consequent`**: reduced cognitive complexity from 16 → 15 by extracting static helper `update_firing_entry`.
 - **`engine.rs` — `defuzzify`**: reduced cognitive complexity from 20 → 15 by extracting dedicated functions per defuzzification method and shared helper `max_membership`.
 - **`svg.rs`**: reduced cognitive complexity of `render_variable_svg` from 24 → 15 and test helper from 22 → 15.
-- `README.md`: expanded with TSK quick start, PSO quick start, updated pipeline diagrams, updated project structure, updated AI usage declaration
+- **`src/engine.rs`, `src/tsk.rs`, `src/pso.rs`**: added mutation-killing boundary tests (30+ new tests targeting comparison and arithmetic mutants)
+- `README.md`: expanded with TSK quick start, PSO quick start, updated pipeline diagrams, updated project structure, updated AI usage declaration, tsk_rule!/tsk_output! macro documentation
+- `CHANGELOG.md`: updated test counts for v0.1.9
+- `CONTRIBUTING.md`: updated clippy command and project structure
 - `.gitignore`: added `/regras_de_negocio` to ignore business rule files
 
 ### CI
-- 430 unit tests (427 existing + 3 new PSO tests) + 14 integration/E2E/concurrency + 43 doc-tests = 487 total
-- Clippy `-D warnings` and `cargo fmt --check` clean
+- 460 unit tests (427 existing + 30+ new) + 14 integration/E2E/concurrency + 45 doc-tests = 519 total
+- Clippy `--tests -- -D warnings` and `cargo fmt --check` clean
 
 ---
 

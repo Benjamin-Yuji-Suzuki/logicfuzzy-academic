@@ -13,16 +13,15 @@ cargo build
 ## Running tests
 
 ```bash
-cargo test              # unit tests + doctests
-cargo test --example demo  # compile-check the demo
+cargo test              # unit tests + integration + doctests
 ```
 
 ## Linting and formatting
 
 ```bash
-cargo clippy -- -D warnings   # must produce zero warnings
-cargo fmt                      # auto-format
-cargo fmt --check              # check without modifying
+cargo clippy --tests -- -D warnings   # must produce zero warnings
+cargo fmt                              # auto-format
+cargo fmt --check                      # check without modifying
 ```
 
 ## Running the demo
@@ -35,7 +34,7 @@ cargo run --example demo
 ## Before submitting a PR
 
 - `cargo test` passes with zero failures
-- `cargo clippy -- -D warnings` produces no warnings
+- `cargo clippy --tests -- -D warnings` produces no warnings
 - `cargo fmt --check` passes
 - New public API has `///` doc comments in English
 - New behaviour has at least one unit test
@@ -51,7 +50,9 @@ src/
 ├── engine.rs     — MamdaniEngine (full pipeline)
 ├── explain.rs    — ExplainReport, CogTable
 ├── svg.rs        — pure-Rust SVG renderer
-├── macros.rs     — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!
+├── macros.rs     — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!, tsk_rule!, tsk_output!
+├── tsk.rs        — TskEngine, TskRule, TskConsequent (TSK inference)
+├── pso.rs        — PsoOptimizer, PsoConfig, PsoState (zero-dependency PSO)
 └── lib.rs        — public re-exports
 
 examples/
