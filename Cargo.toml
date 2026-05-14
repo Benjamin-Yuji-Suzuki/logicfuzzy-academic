@@ -29,3 +29,7 @@ path = "examples/tsk_demo.rs"
 [[example]]
 name = "pso_demo"
 path = "examples/pso_demo.rs"
+
+[[example]]
+name = "pso_mamdani_demo"
+path = "examples/pso_mamdani_demo.rs"
