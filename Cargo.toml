@@ -21,3 +21,11 @@ path = "src/lib.rs"
 [[example]]
 name = "demo"
 path = "examples/demo.rs"
+
+[[example]]
+name = "tsk_demo"
+path = "examples/tsk_demo.rs"
+
+[[example]]
+name = "pso_demo"
+path = "examples/pso_demo.rs"
