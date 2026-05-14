@@ -514,7 +514,7 @@ cargo mutants                             # mutation testing (full suite)
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-logicfuzzy_academic = "2.0"
+logicfuzzy_academic = "0.2"
 ```
 
 Then:
