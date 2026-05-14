@@ -511,47 +511,8 @@ impl TskEngine {
 
         for (i, rule) in self.rules.iter().enumerate() {
             let ant_refs = rule.all_antecedent_refs();
-
-            for (j, ant) in ant_refs.iter().enumerate() {
-                if let Some(var) = self.antecedents.get(&ant.var) {
-                    if var.get_term(&ant.term).is_none() {
-                        errors.push(format!(
-                            "Rule {} antecedent {}: variable '{}' has no term '{}'",
-                            i + 1,
-                            j + 1,
-                            ant.var,
-                            ant.term
-                        ));
-                    }
-                } else {
-                    errors.push(format!(
-                        "Rule {} antecedent {}: variable '{}' not registered as antecedent",
-                        i + 1,
-                        j + 1,
-                        ant.var
-                    ));
-                }
-            }
-
-            for cons in rule.consequents() {
-                if !self.outputs.contains_key(&cons.variable) {
-                    errors.push(format!(
-                        "Rule {}: output variable '{}' not registered",
-                        i + 1,
-                        cons.variable
-                    ));
-                }
-                let expected_coeff_count = ant_names.len() + 1;
-                if cons.coefficients.len() != expected_coeff_count {
-                    errors.push(format!(
-                        "Rule {}: consequent '{}' has {} coefficients but expected {} (n_inputs + 1)",
-                        i + 1,
-                        cons.variable,
-                        cons.coefficients.len(),
-                        expected_coeff_count
-                    ));
-                }
-            }
+            self.validate_rule_antecedents(i, &ant_refs, &mut errors);
+            self.validate_rule_consequents(i, rule, &ant_names, &mut errors);
         }
 
         if errors.is_empty() {
@@ -560,6 +521,62 @@ impl TskEngine {
             Err(FuzzyError::InvalidRule {
                 message: errors.join("; "),
             })
+        }
+    }
+
+    fn validate_rule_antecedents(
+        &self,
+        rule_idx: usize,
+        ant_refs: &[&Antecedent],
+        errors: &mut Vec<String>,
+    ) {
+        for (j, ant) in ant_refs.iter().enumerate() {
+            if let Some(var) = self.antecedents.get(&ant.var) {
+                if var.get_term(&ant.term).is_none() {
+                    errors.push(format!(
+                        "Rule {} antecedent {}: variable '{}' has no term '{}'",
+                        rule_idx + 1,
+                        j + 1,
+                        ant.var,
+                        ant.term
+                    ));
+                }
+            } else {
+                errors.push(format!(
+                    "Rule {} antecedent {}: variable '{}' not registered as antecedent",
+                    rule_idx + 1,
+                    j + 1,
+                    ant.var
+                ));
+            }
+        }
+    }
+
+    fn validate_rule_consequents(
+        &self,
+        rule_idx: usize,
+        rule: &TskRule,
+        ant_names: &[&str],
+        errors: &mut Vec<String>,
+    ) {
+        for cons in rule.consequents() {
+            if !self.outputs.contains_key(&cons.variable) {
+                errors.push(format!(
+                    "Rule {}: output variable '{}' not registered",
+                    rule_idx + 1,
+                    cons.variable
+                ));
+            }
+            let expected_coeff_count = ant_names.len() + 1;
+            if cons.coefficients.len() != expected_coeff_count {
+                errors.push(format!(
+                    "Rule {}: consequent '{}' has {} coefficients but expected {} (n_inputs + 1)",
+                    rule_idx + 1,
+                    cons.variable,
+                    cons.coefficients.len(),
+                    expected_coeff_count
+                ));
+            }
         }
     }
 
@@ -578,6 +595,84 @@ impl TskEngine {
         names
     }
 
+    fn init_accumulators(&self) -> (HashMap<String, f64>, HashMap<String, f64>) {
+        let mut numerator = HashMap::new();
+        let mut denominator = HashMap::new();
+        for var_name in self.outputs.keys() {
+            numerator.insert(var_name.clone(), 0.0);
+            denominator.insert(var_name.clone(), 0.0);
+        }
+        (numerator, denominator)
+    }
+
+    fn aggregate_firings(&self) -> (HashMap<String, f64>, HashMap<String, f64>, bool) {
+        let input_vars = self.input_vars_sorted();
+        let (mut numerator, mut denominator) = self.init_accumulators();
+        let mut any_fired = false;
+
+        for rule in &self.rules {
+            let alpha = rule.firing_strength(&self.inputs, &self.antecedents);
+            if alpha <= 0.0 {
+                continue;
+            }
+            any_fired = true;
+            for cons in rule.consequents() {
+                if let Some(val) =
+                    rule.evaluate_consequent(&cons.variable, &input_vars, &self.inputs)
+                {
+                    *numerator.get_mut(&cons.variable).unwrap() += alpha * val;
+                    *denominator.get_mut(&cons.variable).unwrap() += alpha;
+                }
+            }
+        }
+
+        (numerator, denominator, any_fired)
+    }
+
+    fn build_no_rules_diagnostics(&self) -> Vec<String> {
+        let mut diagnostics = Vec::new();
+        for (name, var) in &self.antecedents {
+            if let Some(&crisp) = self.inputs.get(name) {
+                let degrees = var.fuzzify(crisp);
+                let max_deg = degrees.iter().map(|(_, d)| *d).fold(0.0_f64, f64::max);
+                if max_deg <= 0.0 {
+                    diagnostics.push(format!(
+                        "Antecedent '{}' has crisp value {} but all membership degrees are zero",
+                        name, crisp
+                    ));
+                } else {
+                    diagnostics.push(format!(
+                        "Antecedent '{}' has non-zero degrees (max {:.4}) but no rule matched the combination",
+                        name, max_deg
+                    ));
+                }
+            }
+        }
+        if diagnostics.is_empty() {
+            diagnostics.push("No rules fired (unknown reason)".into());
+        }
+        diagnostics
+    }
+
+    fn compute_weighted_outputs(
+        &self,
+        numerator: &HashMap<String, f64>,
+        denominator: &HashMap<String, f64>,
+    ) -> HashMap<String, f64> {
+        let mut results = HashMap::new();
+        for (var_name, univ) in &self.outputs {
+            let num = numerator[var_name];
+            let den = denominator[var_name];
+            let value = if den.abs() < f64::EPSILON {
+                (univ.min + univ.max) / 2.0
+            } else {
+                (num / den).clamp(univ.min, univ.max)
+            };
+            results.insert(var_name.clone(), value);
+        }
+        results
+    }
+
     /// Runs the TSK inference pipeline.
     ///
     /// For each rule, computes firing strength and evaluates polynomial consequents.
@@ -590,74 +685,15 @@ impl TskEngine {
 
         self.check_all_inputs_present()?;
 
-        let input_vars = self.input_vars_sorted();
-
-        let mut numerator: HashMap<String, f64> = HashMap::new();
-        let mut denominator: HashMap<String, f64> = HashMap::new();
-
-        for var_name in self.outputs.keys() {
-            numerator.insert(var_name.clone(), 0.0);
-            denominator.insert(var_name.clone(), 0.0);
-        }
-
-        let any_fired = {
-            let mut fired = false;
-            for rule in &self.rules {
-                let alpha = rule.firing_strength(&self.inputs, &self.antecedents);
-                if alpha <= 0.0 {
-                    continue;
-                }
-                fired = true;
-                for cons in rule.consequents() {
-                    if let Some(val) =
-                        rule.evaluate_consequent(&cons.variable, &input_vars, &self.inputs)
-                    {
-                        *numerator.get_mut(&cons.variable).unwrap() += alpha * val;
-                        *denominator.get_mut(&cons.variable).unwrap() += alpha;
-                    }
-                }
-            }
-            fired
-        };
+        let (numerator, denominator, any_fired) = self.aggregate_firings();
 
         if !any_fired {
-            let mut diagnostics = Vec::new();
-            for (name, var) in &self.antecedents {
-                if let Some(&crisp) = self.inputs.get(name) {
-                    let degrees = var.fuzzify(crisp);
-                    let max_deg = degrees.iter().map(|(_, d)| *d).fold(0.0_f64, f64::max);
-                    if max_deg <= 0.0 {
-                        diagnostics.push(format!(
-                            "Antecedent '{}' has crisp value {} but all membership degrees are zero",
-                            name, crisp
-                        ));
-                    } else {
-                        diagnostics.push(format!(
-                            "Antecedent '{}' has non-zero degrees (max {:.4}) but no rule matched the combination",
-                            name, max_deg
-                        ));
-                    }
-                }
-            }
-            if diagnostics.is_empty() {
-                diagnostics.push("No rules fired (unknown reason)".into());
-            }
-            return Err(FuzzyError::NoRulesFired { diagnostics });
+            return Err(FuzzyError::NoRulesFired {
+                diagnostics: self.build_no_rules_diagnostics(),
+            });
         }
 
-        let mut results = HashMap::new();
-        for (var_name, univ) in &self.outputs {
-            let num = numerator[var_name];
-            let den = denominator[var_name];
-            let value = if den.abs() < f64::EPSILON {
-                (univ.min + univ.max) / 2.0
-            } else {
-                (num / den).clamp(univ.min, univ.max)
-            };
-            results.insert(var_name.clone(), value);
-        }
-
-        Ok(results)
+        Ok(self.compute_weighted_outputs(&numerator, &denominator))
     }
 
     /// Prints a summary of the engine configuration to stdout.
@@ -734,40 +770,16 @@ impl TskEngine {
 
     /// Helper: runs compute and returns just one output value (for SVG preview).
     fn compute_result_snapshot(&self, name: &str) -> Result<f64, FuzzyError> {
-        let input_vars = self.input_vars_sorted();
-        let mut numerator: HashMap<String, f64> = HashMap::new();
-        let mut denominator: HashMap<String, f64> = HashMap::new();
-        for var_name in self.outputs.keys() {
-            numerator.insert(var_name.clone(), 0.0);
-            denominator.insert(var_name.clone(), 0.0);
-        }
-        for rule in &self.rules {
-            let alpha = rule.firing_strength(&self.inputs, &self.antecedents);
-            if alpha <= 0.0 {
-                continue;
-            }
-            for cons in rule.consequents() {
-                if let Some(val) =
-                    rule.evaluate_consequent(&cons.variable, &input_vars, &self.inputs)
-                {
-                    *numerator.get_mut(&cons.variable).unwrap() += alpha * val;
-                    *denominator.get_mut(&cons.variable).unwrap() += alpha;
-                }
-            }
-        }
+        let (numerator, denominator, _) = self.aggregate_firings();
         let num = numerator.get(name).copied().unwrap_or(0.0);
         let den = denominator.get(name).copied().unwrap_or(0.0);
+        let univ = self
+            .outputs
+            .get(name)
+            .ok_or_else(|| FuzzyError::MissingInput(name.to_string()))?;
         if den.abs() < f64::EPSILON {
-            let univ = self
-                .outputs
-                .get(name)
-                .ok_or_else(|| FuzzyError::MissingInput(name.to_string()))?;
             Ok((univ.min + univ.max) / 2.0)
         } else {
-            let univ = self
-                .outputs
-                .get(name)
-                .ok_or_else(|| FuzzyError::MissingInput(name.to_string()))?;
             Ok((num / den).clamp(univ.min, univ.max))
         }
     }

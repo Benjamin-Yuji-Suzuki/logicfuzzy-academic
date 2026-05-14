@@ -5,7 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [2.0.0] — 2026-05-14
+## [0.2.1] — 2026-05-14
+
+### Fixed
+- **Version corrected**: `Cargo.toml` version bumped from `2.0.0` → `0.2.1` (semver fix)
+
+### Changed
+- **`tsk.rs` — `validate_rules`**: cognitive complexity reduced from ~21 → ≤15 by extracting `validate_rule_antecedents` and `validate_rule_consequents`
+- **`tsk.rs` — `compute`**: cognitive complexity reduced from ~27 → ≤15 by extracting `init_accumulators`, `aggregate_firings`, `build_no_rules_diagnostics`, `compute_weighted_outputs`
+- **`tsk.rs` — code duplication eliminated**: `compute_result_snapshot` now reuses shared `aggregate_firings` (removed ~40 duplicated lines)
+- **`pso.rs` — `optimize`**: cognitive complexity reduced from ~30 → ≤15 by extracting `init_swarm`, `find_global_best`, `update_particle_velocity`, `update_particle_position`, `update_personal_best`, `update_global_best_from_particles`, `check_early_stopping`
+
+---
+
+## [0.2.0] — 2026-05-14
 
 ### Added
 - **TSK (Takagi-Sugeno-Kang) inference engine** (`src/tsk.rs`):
@@ -33,7 +46,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Zero dependencies maintained**: custom SplitMix64 PRNG replaces `rand` crate
 - **Mutation-killing tests**: 30+ new boundary tests across engine.rs, tsk.rs, pso.rs
 - `README.md`: expanded with TSK/PSO quick starts, pipeline diagrams, 4 examples, macro docs
-- `CHANGELOG.md`: full rewrite for v2.0.0
+- `CHANGELOG.md`: full rewrite for v0.2.0
 - `CONTRIBUTING.md`: updated clippy command, project structure with new modules
 - `AGENTS.md`: comprehensive project context for AI agents
 - `.gitignore`: added `/regras_de_negocio`, `/.opencode`, `AGENTS.md`

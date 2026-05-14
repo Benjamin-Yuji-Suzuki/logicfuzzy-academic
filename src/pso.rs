@@ -189,6 +189,113 @@ impl PsoOptimizer {
         }
     }
 
+    fn init_swarm<F>(&self, rng: &mut SplitMix64, fitness_fn: &F) -> Vec<Particle>
+    where
+        F: Fn(&[f64]) -> f64,
+    {
+        (0..self.config.population_size)
+            .map(|_| {
+                let position = random_position(&self.config.bounds, rng);
+                let velocity = random_velocity(&self.config.bounds, rng);
+                let fitness = fitness_fn(&position);
+                Particle {
+                    personal_best_position: position.clone(),
+                    personal_best_fitness: fitness,
+                    position,
+                    velocity,
+                }
+            })
+            .collect()
+    }
+
+    fn find_global_best(particles: &[Particle]) -> (Vec<f64>, f64) {
+        let best_idx = (0..particles.len())
+            .min_by(|&i, &j| {
+                particles[i]
+                    .personal_best_fitness
+                    .total_cmp(&particles[j].personal_best_fitness)
+            })
+            .unwrap();
+        (
+            particles[best_idx].personal_best_position.clone(),
+            particles[best_idx].personal_best_fitness,
+        )
+    }
+
+    fn update_particle_velocity(
+        particle: &mut Particle,
+        global_best_position: &[f64],
+        config: &PsoConfig,
+        rng: &mut SplitMix64,
+    ) {
+        for (j, (p_pos, p_vel)) in particle
+            .position
+            .iter()
+            .zip(particle.velocity.iter_mut())
+            .enumerate()
+        {
+            let r1 = rng.next_f64();
+            let r2 = rng.next_f64();
+            let cognitive =
+                config.cognitive_coefficient * r1 * (particle.personal_best_position[j] - p_pos);
+            let social = config.social_coefficient * r2 * (global_best_position[j] - p_pos);
+            let new_v = config.inertia_weight * *p_vel + cognitive + social;
+            *p_vel = match config.velocity_limit {
+                Some(limit) => new_v.clamp(-limit, limit),
+                None => new_v,
+            };
+        }
+    }
+
+    fn update_particle_position(particle: &mut Particle, bounds: &[(f64, f64)]) {
+        for (j, p) in particle.position.iter_mut().enumerate() {
+            *p = (*p + particle.velocity[j]).clamp(bounds[j].0, bounds[j].1);
+        }
+    }
+
+    fn update_personal_best<F>(
+        particle: &mut Particle,
+        global_best_position: &mut Vec<f64>,
+        global_best_fitness: &mut f64,
+        fitness_fn: &F,
+    ) where
+        F: Fn(&[f64]) -> f64,
+    {
+        let fitness = fitness_fn(&particle.position);
+        if fitness < particle.personal_best_fitness {
+            particle.personal_best_fitness = fitness;
+            particle.personal_best_position = particle.position.clone();
+        }
+        if fitness < *global_best_fitness {
+            *global_best_fitness = fitness;
+            global_best_position.clone_from(&particle.position);
+        }
+    }
+
+    fn update_global_best_from_particles(
+        particles: &[Particle],
+        global_best_position: &mut Vec<f64>,
+        global_best_fitness: &mut f64,
+    ) {
+        for particle in particles {
+            if particle.personal_best_fitness < *global_best_fitness {
+                *global_best_fitness = particle.personal_best_fitness;
+                global_best_position.clone_from(&particle.personal_best_position);
+            }
+        }
+    }
+
+    fn check_early_stopping(
+        &self,
+        no_improve_count: usize,
+        particles: &[Particle],
+        global_best_fitness: &f64,
+    ) -> bool {
+        no_improve_count >= self.config.patience
+            && (global_best_fitness - prev_fitness(particles, global_best_fitness)).abs()
+                < self.config.tolerance
+    }
+
     /// Initializes and runs the full optimization.
     ///
     /// `fitness_fn` takes a slice of parameter values and returns a score to *minimize*.
@@ -201,33 +308,9 @@ impl PsoOptimizer {
         self.start_time = Some(Instant::now());
         let mut rng = make_seed(self.config.seed);
 
-        let mut particles: Vec<Particle> = (0..self.config.population_size)
-            .map(|_| {
-                let position = random_position(&self.config.bounds, &mut rng);
-                let velocity = random_velocity(&self.config.bounds, &mut rng);
-                let fitness = fitness_fn(&position);
-                Particle {
-                    personal_best_position: position.clone(),
-                    personal_best_fitness: fitness,
-                    position,
-                    velocity,
-                }
-            })
-            .collect();
-
-        let (mut global_best_position, mut global_best_fitness) = {
-            let best_idx = (0..particles.len())
-                .min_by(|&i, &j| {
-                    particles[i]
-                        .personal_best_fitness
-                        .total_cmp(&particles[j].personal_best_fitness)
-                })
-                .unwrap();
-            (
-                particles[best_idx].personal_best_position.clone(),
-                particles[best_idx].personal_best_fitness,
-            )
-        };
+        let mut particles = self.init_swarm(&mut rng, &fitness_fn);
+        let (mut global_best_position, mut global_best_fitness) =
+            Self::find_global_best(&particles);
 
         let mut converged = false;
         let mut no_improve_count = 0;
@@ -237,54 +320,28 @@ impl PsoOptimizer {
             final_iteration = iteration;
 
             for particle in &mut particles {
-                for (j, (p_pos, p_vel)) in particle
-                    .position
-                    .iter()
-                    .zip(particle.velocity.iter_mut())
-                    .enumerate()
-                {
-                    let r1: f64 = rng.next_f64();
-                    let r2: f64 = rng.next_f64();
-                    let p_best = particle.personal_best_position[j];
-                    let g_best = global_best_position[j];
-                    let cognitive = self.config.cognitive_coefficient * r1 * (p_best - p_pos);
-                    let social = self.config.social_coefficient * r2 * (g_best - p_pos);
-                    let new_v = self.config.inertia_weight * *p_vel + cognitive + social;
-                    *p_vel = match self.config.velocity_limit {
-                        Some(limit) => new_v.clamp(-limit, limit),
-                        None => new_v,
-                    };
-                }
-
-                for (j, p) in particle.position.iter_mut().enumerate() {
-                    let new_pos = *p + particle.velocity[j];
-                    *p = new_pos.clamp(self.config.bounds[j].0, self.config.bounds[j].1);
-                }
-
-                let fitness = fitness_fn(&particle.position);
-
-                if fitness < particle.personal_best_fitness {
-                    particle.personal_best_fitness = fitness;
-                    particle.personal_best_position = particle.position.clone();
-                }
-
-                if fitness < global_best_fitness {
-                    global_best_fitness = fitness;
-                    global_best_position.clone_from(&particle.position);
-                }
+                Self::update_particle_velocity(
+                    particle,
+                    &global_best_position,
+                    &self.config,
+                    &mut rng,
+                );
+                Self::update_particle_position(particle, &self.config.bounds);
+                Self::update_personal_best(
+                    particle,
+                    &mut global_best_position,
+                    &mut global_best_fitness,
+                    &fitness_fn,
+                );
             }
 
-            for particle in &particles {
-                if particle.personal_best_fitness < global_best_fitness {
-                    global_best_fitness = particle.personal_best_fitness;
-                    global_best_position.clone_from(&particle.personal_best_position);
-                }
-            }
+            Self::update_global_best_from_particles(
+                &particles,
+                &mut global_best_position,
+                &mut global_best_fitness,
+            );
 
-            if no_improve_count >= self.config.patience
-                && (global_best_fitness - prev_fitness(&particles, &global_best_fitness)).abs()
-                    < self.config.tolerance
-            {
+            if self.check_early_stopping(no_improve_count, &particles, &global_best_fitness) {
                 converged = true;
                 break;
             }
