@@ -51,7 +51,7 @@ fn test_irrigation_system_e2e() {
     let result = engine.compute().unwrap();
     let valve = result["valve"];
     assert!(
-        valve >= 0.0 && valve <= 100.0,
+        (0.0..=100.0).contains(&valve),
         "Valve opening must be in [0,100]"
     );
     assert!(
@@ -220,13 +220,12 @@ fn test_fan_and_light_system_e2e() {
     let fan = result["fan_speed"];
     let light = result["light_intensity"];
 
-    // hot+low humidity: rule3 fires (cold OR low → slow fan, high light)
     assert!(
-        fan >= 0.0 && fan <= 100.0,
+        (0.0..=100.0).contains(&fan),
         "Fan speed must be within [0,100]"
     );
     assert!(
-        light >= 0.0 && light <= 100.0,
+        (0.0..=100.0).contains(&light),
         "Light intensity must be within [0,100]"
     );
 

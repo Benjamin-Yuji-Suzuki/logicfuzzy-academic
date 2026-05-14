@@ -1002,7 +1002,7 @@ mod tests {
         let mut v = FuzzyVariable::new("x", Universe::new(0.0, 80.0, 101));
         for i in 0..8 {
             v.add_term(Term::new(
-                &format!("t{}", i),
+                format!("t{}", i),
                 MembershipFn::Trimf([
                     i as f64 * 10.0,
                     i as f64 * 10.0 + 5.0,

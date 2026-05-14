@@ -78,7 +78,7 @@ fn test_all_defuzz_methods_produce_values_in_range() {
         let r = e.compute().unwrap();
         let v = r["speed"];
         // All outputs must lie in the output universe
-        assert!(v >= 0.0 && v <= 100.0, "Method {:?} gave {}", m, v);
+        assert!((0.0..=100.0).contains(&v), "Method {:?} gave {}", m, v);
     }
 }
 

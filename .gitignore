@@ -3,6 +3,9 @@
 *.svg
 Cargo.lock
 cargo.lock
-src/main.rs 
+src/main.rs
 mutants.out
 mutants.out.old
+/regras_de_negocio
+/.opencode
+AGENTS.md

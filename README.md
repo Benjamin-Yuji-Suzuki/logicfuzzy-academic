@@ -9,17 +9,23 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Benjamin-Yuji-Suzuki_logicfuzzy-academic&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Benjamin-Yuji-Suzuki_logicfuzzy-academic)
 
 ---
-A pure-Rust Mamdani Fuzzy Inference System built from scratch — no external fuzzy crates.  
+A pure-Rust Fuzzy Inference System built from scratch — zero external dependencies.  
+Includes both **Mamdani** and **Takagi-Sugeno-Kang (TSK)** inference engines, plus a **Particle Swarm Optimizer** for parameter tuning.  
 Developed as an academic project for the course **Artificial Intelligence and Computation** at CESUPA.
 
 ```rust
+// Mamdani
 antecedent!(engine, "temperature", 0.0, 50.0, 501,
     "cold" => trimf [0.0,  0.0, 25.0],
-    "warm" => trimf [0.0, 25.0, 50.0],
     "hot"  => trimf [25.0,50.0, 50.0],
 );
 engine.add_rule(rule!(IF temperature IS hot OR humidity IS high THEN fan_speed IS fast));
-export_svg!(engine, "output/", aggregated);
+
+// TSK
+let mut tsk = TskEngine::new();
+tsk.add_antecedent(/* fuzzy variable */);
+tsk.add_rule(TskRule::new(/* antecedents */, Connector::And, /* consequents */));
+let result = tsk.compute().unwrap();
 ```
 
 ---
@@ -35,6 +41,8 @@ For the full declaration of AI usage, see the [AI Usage Declaration](#-ai-usage-
 ## Features
 
 - **Complete Mamdani pipeline** — fuzzification → inference → aggregation → defuzzification
+- **TSK (Takagi-Sugeno-Kang) engine** — crisp polynomial consequents, weighted-average output
+- **Particle Swarm Optimizer** — tune MF parameters, rule weights, or TSK coefficients
 - **Membership functions** — `trimf`, `trapmf`, `gaussmf`, including open shoulders
 - **`rule!` macro** — declarative DSL: `IF x IS NOT cold AND y IS high THEN z IS fast` (up to 5 antecedents)
 - **`fuzzy_var!` / `antecedent!` / `consequent!` macros** — build variables in one block
@@ -56,8 +64,8 @@ For the full declaration of AI usage, see the [AI Usage Declaration](#-ai-usage-
 - **CI with coverage** — separate `doc-test` job, `coverage` job with `cargo-llvm-cov`, Codecov upload, and SonarCloud continuous analysis
 - **Mutation testing** — `cargo-mutants` with dedicated CI workflow and dynamic badge (see badge above)
 - **SonarCloud integration** — continuous static analysis covering code smells, duplications, complexity, and vulnerabilities
-- **Comprehensive test suite** — unit, integration, E2E, robustness, and concurrency tests; expanded SVG renderer coverage with exact-coordinate and edge-case assertions
-- **Zero fuzzy dependencies** — only Rust `std`
+- **Comprehensive test suite** — 430+ unit, integration, E2E, robustness, and concurrency tests
+- **Zero external dependencies** — only Rust `std` (built-in SplitMix64 PRNG for PSO)
 
 ---
 
@@ -99,6 +107,104 @@ fn main() {
     export_svg!(engine, "output/", aggregated);
 }
 ```
+
+---
+
+## TSK (Takagi-Sugeno-Kang) Quick Start
+
+TSK uses fuzzy antecedents but crisp polynomial consequents. The output is a weighted average of each rule's polynomial evaluated at the crisp inputs.
+
+```rust
+use logicfuzzy_academic::{
+    TskEngine, TskRule, TskConsequent,
+    FuzzyVariable, Universe, Term, MembershipFn,
+    rule::Antecedent, rule::Connector,
+};
+
+let mut engine = TskEngine::new();
+
+// Input variables (same as Mamdani)
+let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+x.add_term(Term::new("small", MembershipFn::Trimf([0.0, 0.0, 5.0])));
+x.add_term(Term::new("large", MembershipFn::Trimf([5.0, 10.0, 10.0])));
+engine.add_antecedent(x);
+
+// Output universe (no fuzzy terms needed — consequents are polynomials)
+engine.add_output("y", Universe::new(0.0, 100.0, 101));
+
+// Zero-order TSK: constant consequents
+engine.add_rule(TskRule::new(
+    vec![Antecedent::new("x", "small")],
+    Connector::And,
+    vec![TskConsequent::new("y", vec![25.0, 0.0])], // y = 25 + 0*x
+));
+
+// First-order TSK: linear function of inputs (coefficients: [bias, c_x])
+engine.add_rule(TskRule::new(
+    vec![Antecedent::new("x", "large")],
+    Connector::And,
+    vec![TskConsequent::new("y", vec![10.0, 8.0])], // y = 10 + 8*x
+));
+
+engine.set_input("x", 3.0).unwrap();
+let result = engine.compute().unwrap();
+println!("y = {:.2}", result["y"]);
+```
+
+### TSK features
+
+- **Zero-order TSK**: constant output per rule (bias coefficient only)
+- **First-order TSK**: linear polynomial `c₀ + c₁·x₁ + c₂·x₂ + ...`
+- **Multiple outputs**: each rule can have several consequents
+- **Rule weights**: `rule.with_weight(0.8)` scales contribution
+- **Expression antecedents**: `TskRule::from_expression(expr, ...)` for nested AND/OR logic
+- **Output clamping**: results clamped to the output universe bounds
+
+---
+
+## PSO (Particle Swarm Optimization)
+
+Optimize fuzzy system parameters — membership function parameters, TSK coefficients, or rule weights — with a zero-dependency PSO implementation (uses built-in SplitMix64 PRNG).
+
+```rust
+use logicfuzzy_academic::{PsoConfig, PsoOptimizer};
+
+// Minimize the sphere function f(x) = x² + y²
+let sphere = |x: &[f64]| x.iter().map(|xi| xi * xi).sum();
+
+let config = PsoConfig {
+    population_size: 50,
+    max_iterations: 500,
+    inertia_weight: 0.729,          // w
+    cognitive_coefficient: 1.494,   // c1
+    social_coefficient: 1.494,      // c2
+    bounds: vec![(-10.0, 10.0), (-10.0, 10.0)],
+    velocity_limit: Some(2.0),
+    tolerance: 1e-8,
+    patience: 50,
+    seed: Some(42),                 // None = use system time
+};
+
+let mut optimizer = PsoOptimizer::new(config);
+let (best_pos, best_fit, state) = optimizer.optimize(sphere);
+println!("Best: {best_pos:?}  fitness: {best_fit:.6}");
+println!("Converged: {}  iterations: {}", state.converged, state.iteration);
+```
+
+### PSO configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `population_size` | 30 | Number of particles |
+| `max_iterations` | 1000 | Maximum iterations |
+| `inertia_weight` | 0.729 | Velocity retention (w) |
+| `cognitive_coefficient` | 1.494 | Attraction to personal best (c1) |
+| `social_coefficient` | 1.494 | Attraction to global best (c2) |
+| `bounds` | — | Per-dimension `(min, max)` |
+| `velocity_limit` | `None` | Max velocity per dimension |
+| `tolerance` | 1e-8 | Early-stopping convergence threshold |
+| `patience` | 50 | Iterations without improvement before stop |
+| `seed` | `None` | Reproducible PRNG seed |
 
 ---
 
@@ -337,10 +443,12 @@ src/
 ├── explain.rs    — ExplainReport, RuleFiring, FuzzifiedVariable, CogTable
 ├── svg.rs        — pure-Rust SVG renderer (zero dependencies)
 ├── macros.rs     — rule!, fuzzy_var!, antecedent!, consequent!, var_svg!, export_svg!
+├── tsk.rs        — TskEngine, TskRule, TskConsequent (Takagi-Sugeno-Kang inference)
+├── pso.rs        — PsoOptimizer, PsoConfig, PsoState (zero-dependency SplitMix64 PRNG)
 └── lib.rs        — public re-exports
 
 examples/
-└── demo.rs       — two complete systems (tip control + irrigation) with SVG export
+└── demo.rs       — two complete Mamdani systems (tip control + irrigation) with SVG export
 
 .github/workflows/
 ├── ci.yml        — test, clippy, fmt, coverage (llvm-cov + Codecov + SonarCloud)
@@ -349,10 +457,18 @@ examples/
 
 ### Pipeline
 
+**Mamdani:**
 ```
 crisp inputs  →  fuzzification  →  inference (AND=min, OR=max, NOT=1-μ)
              →  clip (Mamdani implication)  →  aggregation (max)
              →  defuzzification (Centroid / Bisector / MOM / SOM / LOM)
+             →  crisp output
+```
+
+**TSK (Takagi-Sugeno-Kang):**
+```
+crisp inputs  →  fuzzification  →  inference (same AND/OR/NOT)
+             →  polynomial consequents  →  weighted average Σ(α·f(x)) / Σ(α)
              →  crisp output
 ```
 
@@ -363,10 +479,36 @@ crisp inputs  →  fuzzification  →  inference (AND=min, OR=max, NOT=1-μ)
 ```bash
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
-cargo run --example demo          # two systems + SVG export to output/
-cargo test                        # full test suite
+cargo run --example demo          # two Mamdani systems + SVG export to output/
+cargo test                        # full test suite (430+ unit + 14 integration)
+cargo clippy -- -D warnings       # lint check
 cargo mutants                     # mutation testing (full suite)
 cargo mutants -f src/svg.rs --timeout 60   # mutation testing for a specific module
+```
+
+### Using TSK and PSO in your project
+
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+logicfuzzy_academic = "0.2"
+```
+
+Then:
+```rust
+use logicfuzzy_academic::{
+    // Mamdani
+    MamdaniEngine, DefuzzMethod,
+    // TSK
+    TskEngine, TskRule, TskConsequent,
+    // PSO
+    PsoConfig, PsoOptimizer, PsoState,
+    // Shared
+    FuzzyVariable, Universe, Term, MembershipFn,
+    FuzzyError,
+    rule::{Antecedent, Connector, RuleBuilder},
+    macros::rule,
+};
 ```
 
 ---
@@ -419,6 +561,7 @@ The development of this library involved AI assistance throughout the project. T
 | **Claude Pro (Anthropic)** | Initial architecture, base code generation, bug fixing, and suggestions | Used at the start of the project to establish the library structure, core pipeline (fuzzification → inference → defuzzification), macro system, and SVG renderer. Also used for early test suggestions and code corrections. | All generated code was reviewed, tested, and validated by the author. Architectural decisions were understood and justified before acceptance. |
 | **Claude Free (Anthropic)** | Code correction, test suggestions, CI/CD configuration, README writing | After Claude Pro credits were exhausted, Claude Free was used to continue fixing bugs, suggesting and reviewing tests, configuring GitHub Actions workflows (coverage, mutation testing, SonarCloud), and writing this README. | Every suggestion was evaluated, tested locally, and accepted only after validation. CI pipeline failures were debugged collaboratively. |
 | **DeepSeek** | Code analysis, test creation, and autonomous self-correction | Used in parallel as a free alternative to listen to the same analyses made with Claude, recommend additional tests, and generate more code. DeepSeek was particularly useful for autonomous self-correction cycles. | All DeepSeek output was reviewed critically. Suggestions that conflicted with existing design decisions were rejected or adapted. |
+| **OpenCode (DeepSeek V4 Flash)** | TSK engine implementation, PSO optimizer implementation, documentation update | Used to implement the entire TSK module (`src/tsk.rs`), PSO module (`src/pso.rs`) with zero-dependency SplitMix64 PRNG, update README with TSK/PSO documentation, update CHANGELOG, update `.gitignore`, and create OpenCode skills. | All generated code was reviewed, tested (430+ tests passing), and validated with clippy and rustfmt. The `rand` dependency initially added was later removed to preserve the zero-dependency philosophy. |
 
 > **Note:** AI usage was declared openly and does not reduce the academic evaluation score. What matters is that the team understood, reviewed, and validated everything that was accepted into the codebase.
 

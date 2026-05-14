@@ -6,10 +6,12 @@
 //!
 //! | Macro | What it does |
 //! |---|---|
-//! | `rule!` | Creates an IF–THEN rule in natural language |
+//! | `rule!` | Creates a Mamdani IF–THEN rule in natural language |
 //! | `fuzzy_var!` | Creates a `FuzzyVariable` with universe and terms |
 //! | `antecedent!` | Creates and registers an input variable in the engine |
 //! | `consequent!` | Creates and registers an output variable in the engine |
+//! | `tsk_rule!` | Creates a TSK IF–THEN rule with polynomial consequent |
+//! | `tsk_output!` | Registers an output universe in a `TskEngine` |
 //! | `var_svg!` | Generates SVG of a `FuzzyVariable` (with or without input marker) |
 //! | `export_svg!` | Exports all SVGs of the engine to a directory |
 //!
@@ -368,6 +370,91 @@ macro_rules! export_svg {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// tsk_output! — registers an output universe in a TskEngine
+// ─────────────────────────────────────────────────────────────────
+
+/// Registers an output variable in a [`TskEngine`](crate::TskEngine).
+///
+/// # Example
+/// ```
+/// use logicfuzzy_academic::{TskEngine, tsk_output};
+/// let mut engine = TskEngine::new();
+/// tsk_output!(engine, "y", 0.0, 100.0, 101);
+/// assert_eq!(engine.output_count(), 1);
+/// ```
+#[macro_export]
+macro_rules! tsk_output {
+    ($engine:expr, $name:literal, $min:literal, $max:literal, $res:literal) => {
+        $engine.add_output(
+            $name,
+            $crate::Universe::new($min as f64, $max as f64, $res as usize),
+        )
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// tsk_rule! — declarative DSL for TSK rules
+// ─────────────────────────────────────────────────────────────────
+
+/// Creates a [`TskRule`](crate::TskRule) with a polynomial consequent.
+///
+/// # Examples
+/// ```
+/// use logicfuzzy_academic::tsk_rule;
+/// // Zero-order: single coefficient (bias)
+/// let r = tsk_rule!(IF x IS small THEN y => [25.0]);
+/// assert_eq!(r.consequents()[0].coefficients, vec![25.0]);
+///
+/// // First-order: bias + one coefficient per antecedent
+/// let r = tsk_rule!(IF x IS small AND y IS low THEN z => [5.0, 2.0, 3.0]);
+/// assert_eq!(r.consequents()[0].coefficients, vec![5.0, 2.0, 3.0]);
+/// ```
+#[macro_export]
+macro_rules! tsk_rule {
+    // ── 1 antecedent ───────────────────────────────────────────────
+    (IF $v1:ident IS $t1:ident THEN $cv:ident => [$($c:expr),+]) => {
+        $crate::TskRule::new(
+            vec![$crate::rule::Antecedent::new(stringify!($v1), stringify!($t1))],
+            $crate::rule::Connector::And,
+            vec![$crate::TskConsequent::new(stringify!($cv), vec![$($c as f64),+])],
+        )
+    };
+
+    // ── 1 antecedent NOT ───────────────────────────────────────────
+    (IF $v1:ident IS NOT $t1:ident THEN $cv:ident => [$($c:expr),+]) => {
+        $crate::TskRule::new(
+            vec![$crate::rule::Antecedent::negated(stringify!($v1), stringify!($t1))],
+            $crate::rule::Connector::And,
+            vec![$crate::TskConsequent::new(stringify!($cv), vec![$($c as f64),+])],
+        )
+    };
+
+    // ── 2 antecedents: AND ─────────────────────────────────────────
+    (IF $v1:ident IS $t1:ident AND $v2:ident IS $t2:ident THEN $cv:ident => [$($c:expr),+]) => {
+        $crate::TskRule::new(
+            vec![
+                $crate::rule::Antecedent::new(stringify!($v1), stringify!($t1)),
+                $crate::rule::Antecedent::new(stringify!($v2), stringify!($t2)),
+            ],
+            $crate::rule::Connector::And,
+            vec![$crate::TskConsequent::new(stringify!($cv), vec![$($c as f64),+])],
+        )
+    };
+
+    // ── 2 antecedents: OR ──────────────────────────────────────────
+    (IF $v1:ident IS $t1:ident OR $v2:ident IS $t2:ident THEN $cv:ident => [$($c:expr),+]) => {
+        $crate::TskRule::new(
+            vec![
+                $crate::rule::Antecedent::new(stringify!($v1), stringify!($t1)),
+                $crate::rule::Antecedent::new(stringify!($v2), stringify!($t2)),
+            ],
+            $crate::rule::Connector::Or,
+            vec![$crate::TskConsequent::new(stringify!($cv), vec![$($c as f64),+])],
+        )
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Unit tests
 // ─────────────────────────────────────────────────────────────────
 
@@ -604,5 +691,64 @@ mod tests {
         assert_eq!(r.antecedents().len(), 3);
         assert_eq!(r.connector(), &Connector::Or);
         assert_eq!(r.antecedents()[2].0, "c");
+    }
+
+    // ── tsk_rule! ──────────────────────────────────────────────────
+
+    #[test]
+    fn tsk_rule_one_antecedent_zero_order() {
+        let r = tsk_rule!(IF temperature IS hot THEN speed => [42.0]);
+        assert_eq!(r.consequents()[0].coefficients, vec![42.0]);
+        assert_eq!(r.consequents()[0].variable, "speed");
+        assert_eq!(r.antecedents_full()[0].var, "temperature");
+        assert_eq!(r.antecedents_full()[0].term, "hot");
+    }
+
+    #[test]
+    fn tsk_rule_one_antecedent_first_order() {
+        let r = tsk_rule!(IF x IS small THEN y => [5.0, 2.0]);
+        assert_eq!(r.consequents()[0].coefficients, vec![5.0, 2.0]);
+    }
+
+    #[test]
+    fn tsk_rule_two_antecedents_and() {
+        let r = tsk_rule!(IF a IS x AND b IS y THEN z => [1.0, 2.0, 3.0]);
+        assert_eq!(r.antecedents_full().len(), 2);
+        assert_eq!(r.consequents()[0].coefficients, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn tsk_rule_two_antecedents_or() {
+        let r = tsk_rule!(IF a IS x OR b IS y THEN z => [10.0, 0.5, 0.5]);
+        assert_eq!(r.antecedents_full().len(), 2);
+        assert_eq!(*r.connector(), Connector::Or);
+    }
+
+    #[test]
+    fn tsk_rule_not_antecedent() {
+        let r = tsk_rule!(IF x IS NOT cold THEN y => [0.0]);
+        assert!(r.antecedents_full()[0].negated);
+    }
+
+    #[test]
+    fn tsk_rule_one_antecedent_full_pipeline() {
+        use crate::{FuzzyVariable, MembershipFn, Term, TskEngine, Universe};
+        let mut engine = TskEngine::new();
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 101));
+        x.add_term(Term::new("small", MembershipFn::Trimf([0.0, 0.0, 5.0])));
+        engine.add_antecedent(x);
+        tsk_output!(engine, "y", 0.0, 100.0, 101);
+        engine.add_rule(tsk_rule!(IF x IS small THEN y => [25.0, 0.0]));
+        engine.set_input_unchecked("x", 2.0);
+        let result = engine.compute().unwrap();
+        assert!((result["y"] - 25.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn tsk_output_registers() {
+        use crate::TskEngine;
+        let mut engine = TskEngine::new();
+        tsk_output!(engine, "result", 0.0, 50.0, 201);
+        assert_eq!(engine.output_count(), 1);
     }
 }

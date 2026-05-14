@@ -46,13 +46,17 @@ pub mod error;
 pub mod explain;
 pub mod macros;
 pub mod membership;
+pub mod pso;
 pub mod rule;
 pub(crate) mod svg;
+pub mod tsk;
 pub mod variable;
 
 pub use engine::{DefuzzMethod, MamdaniEngine};
 pub use error::FuzzyError;
 pub use explain::{CogTable, ExplainReport, FuzzifiedVariable, RuleFiring};
 pub use membership::{gaussmf, interp_membership, trapmf, trimf, MembershipFn};
+pub use pso::{Particle, PsoConfig, PsoOptimizer, PsoState};
 pub use rule::{Antecedent, Connector, Expression, Rule, RuleBuilder};
+pub use tsk::{TskConsequent, TskEngine, TskRule};
 pub use variable::{AntecedentVar, ConsequentVar, FuzzyVariable, Term, Universe};

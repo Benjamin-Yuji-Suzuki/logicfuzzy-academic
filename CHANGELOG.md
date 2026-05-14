@@ -4,29 +4,36 @@ All notable changes to `logicfuzzy-academic` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
-### Pending (next major feature)
-- Takagi-Sugeno inference model (alternative to Mamdani)
 
----
+## [0.1.9] — 2026-05-14
 
-## [Unreleased] — 0.1.9
+### Added
+- **TSK (Takagi-Sugeno-Kang) inference engine** (`src/tsk.rs`):
+  - `TskEngine` — manages antecedents, outputs, and TSK rules; computes weighted-average output
+  - `TskRule` — fuzzy antecedents + crisp polynomial consequents (`TskConsequent`)
+  - Zero-order (constant) and first-order (linear) polynomial consequents
+  - Multiple outputs per rule, rule weights, expression-based antecedents
+  - Output clamping to universe bounds, full `Result`-based error handling
+  - 23 unit tests covering zero-order, first-order, weighted average, multi-output, expression-based rules, and edge cases
+
+- **PSO (Particle Swarm Optimization) optimizer** (`src/pso.rs`):
+  - `PsoOptimizer` with configurable population, inertia, cognitive/social coefficients
+  - Per-dimension bounds, velocity limit, early stopping via tolerance + patience
+  - Reproducible via `seed: Option<u64>`, system time used when `None`
+  - Built-in SplitMix64 PRNG — **zero external dependencies**
+  - 15 unit tests covering sphere function (1D/2D/10D), Rosenbrock, bounds enforcement, convergence, and seed determinism
 
 ### Changed
-- **`engine.rs` — `validate_rules`**: reduced cognitive complexity from 26 → 15 by extracting
-  helpers `rule_antecedents`, `validate_antecedent`, and `validate_consequent`.
-- **`engine.rs` — `firing_degrees_by_consequent`**: reduced cognitive complexity from 16 → 15
-  by extracting static helper `update_firing_entry`.
-- **`engine.rs` — `defuzzify`**: reduced cognitive complexity from 20 → 15 by extracting
-  dedicated functions per defuzzification method (`defuzzify_centroid`, `defuzzify_bisector`,
-  `defuzzify_mom`, `defuzzify_som`, `defuzzify_lom`) and shared helper `max_membership`.
-- **`svg.rs` — `render_variable_svg`**: reduced cognitive complexity from 24 → 15 by extracting
-  `render_curves_and_intersections` and `render_input_marker`.
-- **`svg.rs` — `variable_svg_multiple_intersections_distinct_x`** (test): reduced cognitive
-  complexity from 22 → 15 by extracting `extract_label_rect_x_values`.
-- **`svg.rs` — `extract_label_rect_x_values`** (test helper): reduced cognitive complexity from
-  22 → 15 by extracting `find_next_rect_bounds` and `parse_label_rect_x`.
-- No functional changes; all public APIs and test results remain identical.
-- All comments kept in English per project convention.
+- **`engine.rs` — `validate_rules`**: reduced cognitive complexity from 26 → 15 by extracting helpers `rule_antecedents`, `validate_antecedent`, and `validate_consequent`.
+- **`engine.rs` — `firing_degrees_by_consequent`**: reduced cognitive complexity from 16 → 15 by extracting static helper `update_firing_entry`.
+- **`engine.rs` — `defuzzify`**: reduced cognitive complexity from 20 → 15 by extracting dedicated functions per defuzzification method and shared helper `max_membership`.
+- **`svg.rs`**: reduced cognitive complexity of `render_variable_svg` from 24 → 15 and test helper from 22 → 15.
+- `README.md`: expanded with TSK quick start, PSO quick start, updated pipeline diagrams, updated project structure, updated AI usage declaration
+- `.gitignore`: added `/regras_de_negocio` to ignore business rule files
+
+### CI
+- 430 unit tests (427 existing + 3 new PSO tests) + 14 integration/E2E/concurrency + 43 doc-tests = 487 total
+- Clippy `-D warnings` and `cargo fmt --check` clean
 
 ---
 

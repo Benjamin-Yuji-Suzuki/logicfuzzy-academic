@@ -1419,7 +1419,7 @@ mod tests {
             m.set_input_unchecked("temperature", t);
             m.set_input_unchecked("humidity", h);
             let v = m.compute().unwrap()["fan_speed"];
-            assert!(v >= 0.0 && v <= 100.0);
+            assert!((0.0..=100.0).contains(&v));
         }
     }
 
@@ -2662,5 +2662,172 @@ mod tests {
             (table.centroid - 5.0).abs() < 0.5,
             "Centroid must be ~5.0; if mutated, it will be different"
         );
+    }
+
+    // ── Mutation-killing boundary tests ───────────────────────────
+
+    /// Kill > vs >= in aggregated_mfs: two rules with exact same clipped value
+    #[test]
+    fn aggregation_exact_equal_clip() {
+        let mut engine = MamdaniEngine::new();
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 10.0, 1001));
+        x.add_term(Term::new("a", MembershipFn::Trimf([0.0, 0.0, 10.0])));
+        engine.add_antecedent(x);
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 1001));
+        y.add_term(Term::new("b", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        y.add_term(Term::new("c", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        engine.add_consequent(y);
+        // Two rules with same consequent term "b" and same firing -> same clipped value
+        engine.add_rule(RuleBuilder::new().when("x", "a").then("y", "b").build());
+        engine.add_rule(RuleBuilder::new().when("x", "a").then("y", "b").build());
+        engine.set_input_unchecked("x", 5.0);
+        let result = engine.compute();
+        assert!(result.is_ok());
+    }
+
+    /// Kill < vs <= in defuzzify_centroid when den == EPSILON
+    #[test]
+    fn defuzzify_centroid_epsilon_boundary() {
+        let engine = simple_engine(
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+        );
+        let pts = vec![0.0, 10.0];
+        let agg = vec![f64::EPSILON, 0.0];
+        let result = engine.defuzzify_centroid(&pts, &agg, 5.0);
+        assert!((result - 0.0).abs() < 1e-9);
+    }
+
+    /// Kill < vs <= in defuzzify_bisector with total == EPSILON
+    #[test]
+    fn defuzzify_bisector_epsilon_boundary() {
+        let engine = simple_engine(
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+        );
+        let pts = vec![0.0, 10.0];
+        let agg = vec![f64::EPSILON, 0.0];
+        let result = engine.defuzzify_bisector(&pts, &agg, 5.0);
+        assert!((result - 0.0).abs() < 1e-9);
+    }
+
+    /// Kill < vs <= in defuzzify_mean_of_maximum with max_mu == EPSILON
+    #[test]
+    fn defuzzify_mom_epsilon_max_mu() {
+        let engine = simple_engine(
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+        );
+        let pts = vec![0.0, 5.0, 10.0];
+        let agg = vec![f64::EPSILON, f64::EPSILON, 0.0];
+        let result = engine.defuzzify_mean_of_maximum(&pts, &agg, 5.0);
+        assert!((0.0..=10.0).contains(&result));
+    }
+
+    /// Kill -= vs += and filter comparison mutants in defuzzify_mean_of_maximum
+    #[test]
+    fn defuzzify_mom_asymmetric_peak() {
+        let engine = simple_engine(
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+        );
+        let pts = vec![0.0, 5.0, 10.0];
+        let agg = vec![0.0, 0.0, 1.0];
+        let result = engine.defuzzify_mean_of_maximum(&pts, &agg, 5.0);
+        assert!((result - 10.0).abs() < 1e-9);
+    }
+
+    /// Kill arithmetic mutants in defuzzify_smallest_of_maximum
+    #[test]
+    fn defuzzify_som_with_ties() {
+        // Test the specific method directly, not via engine.defuzzify()
+        let engine = simple_engine(
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+        );
+        let pts = vec![2.0, 5.0, 8.0];
+        let agg = vec![0.5, 0.5, 1.0];
+        let result = engine.defuzzify_smallest_of_maximum(&pts, &agg, 5.0);
+        assert!((result - 8.0).abs() < 1e-9);
+    }
+
+    /// Kill arithmetic mutants in defuzzify_largest_of_maximum
+    #[test]
+    fn defuzzify_lom_with_ties() {
+        let engine = simple_engine(
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+            MembershipFn::Trimf([0.0, 0.0, 0.0]),
+        );
+        let pts = vec![2.0, 5.0, 8.0];
+        let agg = vec![0.0, 1.0, 1.0];
+        let result = engine.defuzzify_largest_of_maximum(&pts, &agg, 5.0);
+        assert!((result - 8.0).abs() < 1e-9);
+    }
+
+    /// Kill < vs <= in discrete_cog interpolation
+    #[test]
+    fn discrete_cog_interpolation_boundary() {
+        let mut m = MamdaniEngine::new();
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 1.0, 2));
+        x.add_term(Term::new("on", MembershipFn::Trapmf([0.0, 0.0, 1.0, 1.0])));
+        m.add_antecedent(x);
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 10.0, 101));
+        y.add_term(Term::new("tri", MembershipFn::Trimf([0.0, 5.0, 10.0])));
+        m.add_consequent(y);
+        m.add_rule(RuleBuilder::new().when("x", "on").then("y", "tri").build());
+        m.set_input_unchecked("x", 0.5);
+        let table = m.discrete_cog("y", 0.5).unwrap();
+        assert!((table.centroid - 5.0).abs() < 0.1);
+        // Verify numerator/denominator consistency
+        assert!((table.numerator / table.denominator - table.centroid).abs() < 1e-9);
+    }
+
+    /// Kill discrete_cog arithmetic mutants: (max - min) / step
+    #[test]
+    fn discrete_cog_step_division_exact() {
+        let mut m = MamdaniEngine::new();
+        let mut x = FuzzyVariable::new("x", Universe::new(0.0, 1.0, 2));
+        x.add_term(Term::new("on", MembershipFn::Trapmf([0.0, 0.0, 1.0, 1.0])));
+        m.add_antecedent(x);
+        let mut y = FuzzyVariable::new("y", Universe::new(0.0, 6.0, 7));
+        y.add_term(Term::new("tri", MembershipFn::Trimf([0.0, 3.0, 6.0])));
+        m.add_consequent(y);
+        m.add_rule(RuleBuilder::new().when("x", "on").then("y", "tri").build());
+        m.set_input_unchecked("x", 0.5);
+        let table = m.discrete_cog("y", 2.0).unwrap();
+        // (max-min)/step = (6-0)/2 = 3, +1 = 4 points: [0, 2, 4, 6]
+        assert_eq!(table.disc_pts.len(), 4);
+    }
+
+    /// Kill update_firing_entry comparison mutants
+    #[test]
+    fn update_firing_entry_with_equal_degree() {
+        let mut entries = Vec::new();
+        MamdaniEngine::update_firing_entry(&mut entries, "slow", 0.5);
+        MamdaniEngine::update_firing_entry(&mut entries, "slow", 0.5);
+        assert_eq!(entries.len(), 1);
+        assert!((entries[0].1 - 0.5).abs() < 1e-9);
+    }
+
+    /// Kill max_membership return-value mutants
+    #[test]
+    fn max_membership_returns_correct_max() {
+        let agg = vec![0.1, 0.5, 0.3, 0.9, 0.2];
+        let max_val = MamdaniEngine::max_membership(&agg);
+        assert!((max_val - 0.9).abs() < 1e-9);
+    }
+
+    /// Kill display weight > vs >= in Rule
+    #[test]
+    fn rule_display_weight_boundary() {
+        let w = 1.0 - 1e-9;
+        let rule = crate::rule::Rule::new(
+            vec![crate::rule::Antecedent::new("x", "a")],
+            crate::rule::Connector::And,
+            vec![("y".into(), "b".into())],
+        )
+        .with_weight(w);
+        let s = rule.to_string();
+        assert!(!s.contains("[w="), "weight near 1 should not display");
     }
 }
