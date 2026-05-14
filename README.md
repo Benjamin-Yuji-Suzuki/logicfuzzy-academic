@@ -65,7 +65,8 @@ For the full declaration of AI usage, see the [AI Usage Declaration](#-ai-usage-
 - **CI with coverage** — separate `doc-test` job, `coverage` job with `cargo-llvm-cov`, Codecov upload, and SonarCloud continuous analysis
 - **Mutation testing** — `cargo-mutants` with dedicated CI workflow and dynamic badge (see badge above)
 - **SonarCloud integration** — continuous static analysis covering code smells, duplications, complexity, and vulnerabilities
-- **Comprehensive test suite** — 460+ unit, 14 integration/E2E/concurrency, and 45+ doc-tests
+- **Comprehensive test suite** — 460+ unit, 14 integration/E2E/concurrency, and 45+ doc-tests (519 total)
+- **4 example programs** — Mamdani (tip + irrigation), TSK (climate control), PSO (coefficient optimization), PSO + Mamdani (MF tuning)
 - **Zero external dependencies** — only Rust `std` (built-in SplitMix64 PRNG for PSO)
 
 ---
@@ -498,11 +499,14 @@ crisp inputs  →  fuzzification  →  inference (same AND/OR/NOT)
 ```bash
 git clone https://github.com/Benjamin-Yuji-Suzuki/logicfuzzy-academic
 cd logicfuzzy-academic
-cargo run --example demo          # two Mamdani systems + SVG export to output/
-cargo test                        # full test suite (460 unit + 14 integration + 45 doc-tests)
-cargo clippy --tests -- -D warnings  # lint check (tests included)
-cargo mutants                     # mutation testing (full suite)
-cargo mutants -f src/svg.rs --timeout 60   # mutation testing for a specific module
+cargo run --example demo                  # Mamdani: tip control + irrigation
+cargo run --example tsk_demo              # TSK: room climate control
+cargo run --example pso_demo              # PSO + TSK: coefficient optimization
+cargo run --example pso_mamdani_demo      # PSO + Mamdani: MF peak optimization
+cargo test                                # full test suite (460 unit + 14 integration + 45 doc-tests)
+cargo clippy --tests -- -D warnings       # lint check (tests included)
+cargo doc --no-deps                       # build docs.rs-compatible documentation
+cargo mutants                             # mutation testing (full suite)
 ```
 
 ### Using TSK and PSO in your project
@@ -510,7 +514,7 @@ cargo mutants -f src/svg.rs --timeout 60   # mutation testing for a specific mod
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-logicfuzzy_academic = "0.1.9"
+logicfuzzy_academic = "2.0"
 ```
 
 Then:

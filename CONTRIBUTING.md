@@ -56,5 +56,8 @@ src/
 └── lib.rs        — public re-exports
 
 examples/
-└── demo.rs       — two complete Mamdani systems with SVG export
+├── demo.rs              — Mamdani: tip control + irrigation (SVG export)
+├── tsk_demo.rs          — TSK: room climate control (7 rules, 2 outputs)
+├── pso_demo.rs          — PSO + TSK: optimizing consequent coefficients
+└── pso_mamdani_demo.rs  — PSO + Mamdani: optimizing MF peak positions
 ```

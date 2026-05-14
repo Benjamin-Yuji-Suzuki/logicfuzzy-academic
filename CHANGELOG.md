@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [0.1.9] — 2026-05-14
+## [2.0.0] — 2026-05-14
 
 ### Added
 - **TSK (Takagi-Sugeno-Kang) inference engine** (`src/tsk.rs`):
@@ -13,29 +13,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `TskRule` — fuzzy antecedents + crisp polynomial consequents (`TskConsequent`)
   - Zero-order (constant) and first-order (linear) polynomial consequents
   - Multiple outputs per rule, rule weights, expression-based antecedents
-  - Output clamping to universe bounds, full `Result`-based error handling
-  - 23 unit tests covering zero-order, first-order, weighted average, multi-output, expression-based rules, and edge cases
+  - SVG export for antecedents + output value cards
+  - 30+ unit tests including mutation-killing boundary tests
+  - Macros: `tsk_rule!`, `tsk_output!`
 
 - **PSO (Particle Swarm Optimization) optimizer** (`src/pso.rs`):
   - `PsoOptimizer` with configurable population, inertia, cognitive/social coefficients
   - Per-dimension bounds, velocity limit, early stopping via tolerance + patience
   - Reproducible via `seed: Option<u64>`, system time used when `None`
   - Built-in SplitMix64 PRNG — **zero external dependencies**
-  - 15 unit tests covering sphere function (1D/2D/10D), Rosenbrock, bounds enforcement, convergence, and seed determinism
+  - 15 unit tests including exact sequence verification, boundary comparisons
+
+- **4 example programs**:
+  - `examples/tsk_demo.rs` — TSK room climate control (7 rules, 2 outputs, 6 scenarios, SVG export)
+  - `examples/pso_demo.rs` — PSO optimizing TSK coefficients to approximate sin·cos function
+  - `examples/pso_mamdani_demo.rs` — PSO tuning Mamdani MF peaks to approximate target curve
 
 ### Changed
-- **`engine.rs` — `validate_rules`**: reduced cognitive complexity from 26 → 15 by extracting helpers `rule_antecedents`, `validate_antecedent`, and `validate_consequent`.
-- **`engine.rs` — `firing_degrees_by_consequent`**: reduced cognitive complexity from 16 → 15 by extracting static helper `update_firing_entry`.
-- **`engine.rs` — `defuzzify`**: reduced cognitive complexity from 20 → 15 by extracting dedicated functions per defuzzification method and shared helper `max_membership`.
-- **`svg.rs`**: reduced cognitive complexity of `render_variable_svg` from 24 → 15 and test helper from 22 → 15.
-- **`src/engine.rs`, `src/tsk.rs`, `src/pso.rs`**: added mutation-killing boundary tests (30+ new tests targeting comparison and arithmetic mutants)
-- `README.md`: expanded with TSK quick start, PSO quick start, updated pipeline diagrams, updated project structure, updated AI usage declaration, tsk_rule!/tsk_output! macro documentation
-- `CHANGELOG.md`: updated test counts for v0.1.9
-- `CONTRIBUTING.md`: updated clippy command and project structure
-- `.gitignore`: added `/regras_de_negocio` to ignore business rule files
+- **Zero dependencies maintained**: custom SplitMix64 PRNG replaces `rand` crate
+- **Mutation-killing tests**: 30+ new boundary tests across engine.rs, tsk.rs, pso.rs
+- `README.md`: expanded with TSK/PSO quick starts, pipeline diagrams, 4 examples, macro docs
+- `CHANGELOG.md`: full rewrite for v2.0.0
+- `CONTRIBUTING.md`: updated clippy command, project structure with new modules
+- `AGENTS.md`: comprehensive project context for AI agents
+- `.gitignore`: added `/regras_de_negocio`, `/.opencode`, `AGENTS.md`
 
 ### CI
-- 460 unit tests (427 existing + 30+ new) + 14 integration/E2E/concurrency + 45 doc-tests = 519 total
+- 460 unit tests + 14 integration/E2E/concurrency + 45 doc-tests = **519 total**
 - Clippy `--tests -- -D warnings` and `cargo fmt --check` clean
 
 ---
