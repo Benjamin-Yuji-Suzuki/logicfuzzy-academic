@@ -44,6 +44,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.9] — 2026-05-07
+
+### Changed
+- **`engine.rs` — `validate_rules`**: reduced cognitive complexity from 26 → 15 by extracting helpers `rule_antecedents`, `validate_antecedent`, and `validate_consequent`.
+- **`engine.rs` — `firing_degrees_by_consequent`**: reduced cognitive complexity from 16 → 15 by extracting static helper `update_firing_entry`.
+- **`engine.rs` — `defuzzify`**: reduced cognitive complexity from 20 → 15 by extracting dedicated functions per defuzzification method (`defuzzify_centroid`, `defuzzify_bisector`, `defuzzify_mom`, `defuzzify_som`, `defuzzify_lom`) and shared helper `max_membership`.
+- **`svg.rs` — `render_variable_svg`**: reduced cognitive complexity from 24 → 15 by extracting `render_curves_and_intersections` and `render_input_marker`.
+- **`svg.rs` — `variable_svg_multiple_intersections_distinct_x`** (test): reduced cognitive complexity from 22 → 15 by extracting `extract_label_rect_x_values`.
+- **`svg.rs` — `extract_label_rect_x_values`** (test helper): reduced cognitive complexity from 22 → 15 by extracting `find_next_rect_bounds` and `parse_label_rect_x`.
+- No functional changes; all public APIs and test results remain identical.
+- All comments kept in English per project convention.
+
+---
+
 ## [0.1.8] — 2026-05-06
 ### Added
 - **Mutation testing** with `cargo-mutants` and CI workflow (`mutation.yml`):
