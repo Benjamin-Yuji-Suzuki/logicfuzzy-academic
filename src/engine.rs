@@ -577,23 +577,10 @@ impl MamdaniEngine {
     }
 
     fn build_no_rules_fired_error(&self) -> FuzzyError {
-        let mut diagnostics = Vec::new();
-        for (name, var) in &self.antecedents {
-            if let Some(&crisp) = self.inputs.get(name) {
-                let degrees = var.fuzzify(crisp);
-                let max_deg = degrees.iter().map(|(_, d)| *d).fold(0.0_f64, f64::max);
-                if max_deg <= 0.0 {
-                    diagnostics.push(format!(
-                        "Antecedent '{}' has crisp value {} but all membership degrees are zero",
-                        name, crisp
-                    ));
-                } else {
-                    diagnostics.push(format!(
-                        "Antecedent '{}' has non-zero degrees (max {:.4}) but no rule matched the combination",
-                        name, max_deg
-                    ));
-                }
-            } else {
+        let mut diagnostics =
+            crate::util::build_no_rules_diagnostics_impl(&self.antecedents, &self.inputs);
+        for name in self.antecedents.keys() {
+            if !self.inputs.contains_key(name) {
                 diagnostics.push(format!("Antecedent '{}' has no crisp input set", name));
             }
         }
@@ -797,12 +784,7 @@ impl MamdaniEngine {
 
         fs::create_dir_all(dir)?;
 
-        for (name, var) in &self.antecedents {
-            let input = self.inputs.get(name.as_str()).copied();
-            let svg = crate::svg::render_variable_svg(var, input);
-            let path = Path::new(dir).join(format!("{}.svg", name));
-            fs::write(path, svg)?;
-        }
+        crate::util::export_antecedent_svgs(&self.antecedents, &self.inputs, dir)?;
 
         for (name, var) in &self.consequents {
             let svg = crate::svg::render_variable_svg(var, None);

@@ -15,6 +15,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`tsk.rs` — `compute`**: cognitive complexity reduced from ~27 → ≤15 by extracting `init_accumulators`, `aggregate_firings`, `build_no_rules_diagnostics`, `compute_weighted_outputs`
 - **`tsk.rs` — code duplication eliminated**: `compute_result_snapshot` now reuses shared `aggregate_firings` (removed ~40 duplicated lines)
 - **`pso.rs` — `optimize`**: cognitive complexity reduced from ~30 → ≤15 by extracting `init_swarm`, `find_global_best`, `update_particle_velocity`, `update_particle_position`, `update_personal_best`, `update_global_best_from_particles`, `check_early_stopping`
+- **`util.rs` — shared module created**: extracted `set_input_impl`, `set_input_unchecked_impl`, `firing_strength_impl`, `format_rule_condition`, `build_no_rules_diagnostics_impl`, `export_antecedent_svgs` to eliminate verbatim copies between `tsk.rs`, `engine.rs`, and `rule.rs`
 
 ---
 

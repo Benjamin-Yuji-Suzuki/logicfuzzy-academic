@@ -563,24 +563,8 @@ impl TskEngine {
     }
 
     fn build_no_rules_diagnostics(&self) -> Vec<String> {
-        let mut diagnostics = Vec::new();
-        for (name, var) in &self.antecedents {
-            if let Some(&crisp) = self.inputs.get(name) {
-                let degrees = var.fuzzify(crisp);
-                let max_deg = degrees.iter().map(|(_, d)| *d).fold(0.0_f64, f64::max);
-                if max_deg <= 0.0 {
-                    diagnostics.push(format!(
-                        "Antecedent '{}' has crisp value {} but all membership degrees are zero",
-                        name, crisp
-                    ));
-                } else {
-                    diagnostics.push(format!(
-                        "Antecedent '{}' has non-zero degrees (max {:.4}) but no rule matched the combination",
-                        name, max_deg
-                    ));
-                }
-            }
-        }
+        let mut diagnostics =
+            crate::util::build_no_rules_diagnostics_impl(&self.antecedents, &self.inputs);
         if diagnostics.is_empty() {
             diagnostics.push("No rules fired (unknown reason)".into());
         }
@@ -662,12 +646,7 @@ impl TskEngine {
         use std::fs;
         use std::path::Path;
         fs::create_dir_all(dir)?;
-        for (name, var) in &self.antecedents {
-            let input = self.inputs.get(name.as_str()).copied();
-            let svg = crate::svg::render_variable_svg(var, input);
-            let path = Path::new(dir).join(format!("{}.svg", name));
-            fs::write(path, svg)?;
-        }
+        crate::util::export_antecedent_svgs(&self.antecedents, &self.inputs, dir)?;
         for name in self.outputs.keys() {
             let svg = self.render_output_svg(name).0;
             let path = Path::new(dir).join(format!("{}.svg", name));

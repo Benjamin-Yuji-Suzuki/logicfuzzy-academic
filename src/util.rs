@@ -90,6 +90,49 @@ pub(crate) fn firing_strength_impl(
     (firing * weight).clamp(0.0, 1.0)
 }
 
+/// Core diagnostics for when no rules fire: checks each antecedent's membership.
+pub(crate) fn build_no_rules_diagnostics_impl(
+    antecedents: &BTreeMap<String, FuzzyVariable>,
+    inputs: &BTreeMap<String, f64>,
+) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+    for (name, var) in antecedents {
+        if let Some(&crisp) = inputs.get(name) {
+            let degrees = var.fuzzify(crisp);
+            let max_deg = degrees.iter().map(|(_, d)| *d).fold(0.0_f64, f64::max);
+            if max_deg <= 0.0 {
+                diagnostics.push(format!(
+                    "Antecedent '{}' has crisp value {} but all membership degrees are zero",
+                    name, crisp
+                ));
+            } else {
+                diagnostics.push(format!(
+                    "Antecedent '{}' has non-zero degrees (max {:.4}) but no rule matched the combination",
+                    name, max_deg
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
+/// Exports SVG for all antecedents into the given directory.
+pub(crate) fn export_antecedent_svgs(
+    antecedents: &BTreeMap<String, FuzzyVariable>,
+    inputs: &BTreeMap<String, f64>,
+    dir: &str,
+) -> std::io::Result<()> {
+    use std::fs;
+    use std::path::Path;
+    for (name, var) in antecedents {
+        let input = inputs.get(name.as_str()).copied();
+        let svg = crate::svg::render_variable_svg(var, input);
+        let path = Path::new(dir).join(format!("{}.svg", name));
+        fs::write(path, svg)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn format_rule_condition(
     expression: Option<&Expression>,
     antecedents: &[Antecedent],
