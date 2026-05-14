@@ -50,6 +50,7 @@ pub mod pso;
 pub mod rule;
 pub(crate) mod svg;
 pub mod tsk;
+pub(crate) mod util;
 pub mod variable;
 
 pub use engine::{DefuzzMethod, MamdaniEngine};

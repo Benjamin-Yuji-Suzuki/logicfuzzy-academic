@@ -220,28 +220,14 @@ impl TskRule {
         inputs: &BTreeMap<String, f64>,
         antecedents: &BTreeMap<String, FuzzyVariable>,
     ) -> f64 {
-        if let Some(expr) = &self.expression {
-            return (expr.eval(inputs, antecedents) * self.weight).clamp(0.0, 1.0);
-        }
-
-        let mut degrees = Vec::with_capacity(self.antecedents.len());
-        for ant in &self.antecedents {
-            match ant.eval(inputs, antecedents) {
-                Some(d) => degrees.push(d),
-                None => return 0.0,
-            }
-        }
-
-        if degrees.is_empty() {
-            return 0.0;
-        }
-
-        let firing = match self.connector {
-            Connector::And => degrees.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
-            Connector::Or => degrees.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
-        };
-
-        (firing * self.weight).clamp(0.0, 1.0)
+        crate::util::firing_strength_impl(
+            self.expression.as_ref(),
+            &self.antecedents,
+            &self.connector,
+            self.weight,
+            inputs,
+            antecedents,
+        )
     }
 
     /// Evaluate the polynomial consequent for `var_name` given the crisp inputs.
@@ -280,26 +266,11 @@ impl TskRule {
 
 impl std::fmt::Display for TskRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let condition = if let Some(expr) = &self.expression {
-            expr.to_string()
-        } else {
-            let conn = match self.connector {
-                Connector::And => "AND",
-                Connector::Or => "OR",
-            };
-            let ants: Vec<String> = self
-                .antecedents
-                .iter()
-                .map(|a| {
-                    if a.negated {
-                        format!("({} IS NOT {})", a.var, a.term)
-                    } else {
-                        format!("({} IS {})", a.var, a.term)
-                    }
-                })
-                .collect();
-            ants.join(&format!(" {} ", conn))
-        };
+        let condition = crate::util::format_rule_condition(
+            self.expression.as_ref(),
+            &self.antecedents,
+            &self.connector,
+        );
 
         let cons: Vec<String> = self
             .consequents
@@ -424,34 +395,7 @@ impl TskEngine {
     /// Returns `Err(InputOutOfRange)` (and clamps the value) if outside the universe.
     /// Returns `Err(MissingInput)` if the variable is not registered.
     pub fn set_input(&mut self, name: &str, value: f64) -> Result<(), FuzzyError> {
-        if !value.is_finite() {
-            return Err(FuzzyError::InvalidInput {
-                variable: name.to_string(),
-                value,
-            });
-        }
-
-        let var = self
-            .antecedents
-            .get(name)
-            .ok_or_else(|| FuzzyError::MissingInput(name.to_string()))?;
-
-        let min = var.universe.min;
-        let max = var.universe.max;
-
-        if value < min || value > max {
-            let clamped = value.clamp(min, max);
-            self.inputs.insert(name.to_string(), clamped);
-            return Err(FuzzyError::InputOutOfRange {
-                variable: name.to_string(),
-                value,
-                min,
-                max,
-            });
-        }
-
-        self.inputs.insert(name.to_string(), value);
-        Ok(())
+        crate::util::set_input_impl(&self.antecedents, &mut self.inputs, name, value)
     }
 
     /// Sets a crisp input value, clamping silently if out of range.
@@ -461,18 +405,7 @@ impl TskEngine {
     /// # Panics
     /// Panics if the variable is not registered or if the value is NaN/infinite.
     pub fn set_input_unchecked(&mut self, name: &str, value: f64) {
-        if let Err(e) = self.set_input(name, value) {
-            match e {
-                FuzzyError::MissingInput(_) => panic!("Variable '{}' not registered", name),
-                FuzzyError::InputOutOfRange { .. } => {}
-                FuzzyError::InvalidInput { .. } => {
-                    panic!("Invalid input value for variable '{}'", name)
-                }
-                FuzzyError::InvalidRule { .. } => unreachable!(),
-                FuzzyError::NoRulesFired { .. } => unreachable!(),
-                FuzzyError::DuplicateVariable(_) => unreachable!(),
-            }
-        }
+        crate::util::set_input_unchecked_impl(&self.antecedents, &mut self.inputs, name, value);
     }
 
     /// Clears all set crisp inputs, returning the engine to a fresh state.
@@ -771,17 +704,11 @@ impl TskEngine {
     /// Helper: runs compute and returns just one output value (for SVG preview).
     fn compute_result_snapshot(&self, name: &str) -> Result<f64, FuzzyError> {
         let (numerator, denominator, _) = self.aggregate_firings();
-        let num = numerator.get(name).copied().unwrap_or(0.0);
-        let den = denominator.get(name).copied().unwrap_or(0.0);
-        let univ = self
-            .outputs
+        let results = self.compute_weighted_outputs(&numerator, &denominator);
+        results
             .get(name)
-            .ok_or_else(|| FuzzyError::MissingInput(name.to_string()))?;
-        if den.abs() < f64::EPSILON {
-            Ok((univ.min + univ.max) / 2.0)
-        } else {
-            Ok((num / den).clamp(univ.min, univ.max))
-        }
+            .copied()
+            .ok_or_else(|| FuzzyError::MissingInput(name.to_string()))
     }
 }
 

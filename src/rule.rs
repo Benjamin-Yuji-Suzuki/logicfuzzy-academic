@@ -354,54 +354,24 @@ impl Rule {
         inputs: &BTreeMap<String, f64>,
         antecedents: &BTreeMap<String, FuzzyVariable>,
     ) -> f64 {
-        if let Some(expr) = &self.expression {
-            return (expr.eval(inputs, antecedents) * self.weight).clamp(0.0, 1.0);
-        }
-
-        // Backward-compatible flat evaluation
-        let mut degrees = Vec::with_capacity(self.antecedents.len());
-        for ant in &self.antecedents {
-            match ant.eval(inputs, antecedents) {
-                Some(d) => degrees.push(d),
-                None => return 0.0,
-            }
-        }
-
-        if degrees.is_empty() {
-            return 0.0;
-        }
-
-        let firing = match self.connector {
-            Connector::And => degrees.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
-            Connector::Or => degrees.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
-        };
-
-        (firing * self.weight).clamp(0.0, 1.0)
+        crate::util::firing_strength_impl(
+            self.expression.as_ref(),
+            &self.antecedents,
+            &self.connector,
+            self.weight,
+            inputs,
+            antecedents,
+        )
     }
 }
 
 impl fmt::Display for Rule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let condition = if let Some(expr) = &self.expression {
-            expr.to_string()
-        } else {
-            let conn = match self.connector {
-                Connector::And => "AND",
-                Connector::Or => "OR",
-            };
-            let ants: Vec<String> = self
-                .antecedents
-                .iter()
-                .map(|a| {
-                    if a.negated {
-                        format!("({} IS NOT {})", a.var, a.term)
-                    } else {
-                        format!("({} IS {})", a.var, a.term)
-                    }
-                })
-                .collect();
-            ants.join(&format!(" {} ", conn))
-        };
+        let condition = crate::util::format_rule_condition(
+            self.expression.as_ref(),
+            &self.antecedents,
+            &self.connector,
+        );
 
         let cons: Vec<String> = self
             .consequents

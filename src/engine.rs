@@ -335,34 +335,7 @@ impl MamdaniEngine {
     /// ```
     #[must_use = "this Result must be used; set_input can fail and the error should not be ignored"]
     pub fn set_input(&mut self, name: &str, value: f64) -> Result<(), FuzzyError> {
-        if !value.is_finite() {
-            return Err(FuzzyError::InvalidInput {
-                variable: name.to_string(),
-                value,
-            });
-        }
-
-        let var = self
-            .antecedents
-            .get(name)
-            .ok_or_else(|| FuzzyError::MissingInput(name.to_string()))?;
-
-        let min = var.universe.min;
-        let max = var.universe.max;
-
-        if value < min || value > max {
-            let clamped = value.clamp(min, max);
-            self.inputs.insert(name.to_string(), clamped);
-            return Err(FuzzyError::InputOutOfRange {
-                variable: name.to_string(),
-                value,
-                min,
-                max,
-            });
-        }
-
-        self.inputs.insert(name.to_string(), value);
-        Ok(())
+        crate::util::set_input_impl(&self.antecedents, &mut self.inputs, name, value)
     }
 
     /// Sets a crisp input value, clamping silently if out of range.
@@ -381,18 +354,7 @@ impl MamdaniEngine {
     /// engine.set_input_unchecked("x", 5.0); // clamps silently to 10.0
     /// ```
     pub fn set_input_unchecked(&mut self, name: &str, value: f64) {
-        if let Err(e) = self.set_input(name, value) {
-            match e {
-                FuzzyError::MissingInput(_) => panic!("Variable '{}' not registered", name),
-                FuzzyError::InputOutOfRange { .. } => {}
-                FuzzyError::InvalidInput { .. } => {
-                    panic!("Invalid input value for variable '{}'", name)
-                }
-                FuzzyError::InvalidRule { .. } => unreachable!(),
-                FuzzyError::NoRulesFired { .. } => unreachable!(),
-                FuzzyError::DuplicateVariable(_) => unreachable!(),
-            }
-        }
+        crate::util::set_input_unchecked_impl(&self.antecedents, &mut self.inputs, name, value);
     }
 
     /// Clears all set crisp inputs, returning the engine to a state ready for a new scenario.
